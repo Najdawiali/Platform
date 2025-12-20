@@ -1,0 +1,16 @@
+employee_id,first_name,last_name,department,position,salary,hire_date,email,status
+E001,John,Smith,Engineering,Senior Developer,95000,2020-03-15,john.smith@company.com,Active
+E002,Sarah,Johnson,Marketing,Marketing Manager,82000,2019-07-22,sarah.j@company.com,Active
+E003,Michael,Williams,Sales,Sales Representative,65000,2021-01-10,m.williams@company.com,Active
+E004,Emily,Brown,Engineering,Software Engineer,78000,2021-06-01,emily.b@company.com,Active
+E005,David,Jones,HR,HR Specialist,60000,2020-11-05,david.jones@company.com,Active
+E006,Jessica,Davis,Finance,Financial Analyst,72000,2019-09-18,j.davis@company.com,Active
+E007,James,Miller,Engineering,Tech Lead,105000,2018-04-12,james.m@company.com,Active
+E008,Jennifer,Wilson,Marketing,Content Writer,58000,2022-02-28,jennifer.w@company.com,Active
+E009,Robert,Moore,Sales,Sales Director,98000,2017-12-01,robert.moore@company.com,Active
+E010,Linda,Taylor,Engineering,DevOps Engineer,85000,2020-08-15,linda.t@company.com,Active
+E011,William,Anderson,Finance,Accountant,68000,2021-03-20,w.anderson@company.com,Active
+E012,Mary,Thomas,HR,Recruiter,62000,2021-09-10,mary.thomas@company.com,Active
+E013,Richard,Jackson,Engineering,Junior Developer,55000,2022-05-01,r.jackson@company.com,Active
+E014,Patricia,White,Marketing,Social Media Manager,64000,2020-10-15,patricia.w@company.com,Active
+E015,Charles,Harris,Sales,Account Manager,70000,2019-11-30,charles.h@company.com,Active

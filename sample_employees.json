@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "name": "Alice Johnson",
+    "age": 28,
+    "department": "Engineering",
+    "salary": 95000,
+    "city": "San Francisco",
+    "join_date": "2020-01-15"
+  },
+  {
+    "id": 2,
+    "name": "Bob Smith",
+    "age": 35,
+    "department": "Sales",
+    "salary": 75000,
+    "city": "New York",
+    "join_date": "2019-06-01"
+  },
+  {
+    "id": 3,
+    "name": "Carol Davis",
+    "age": 42,
+    "department": "Engineering",
+    "salary": 110000,
+    "city": "San Francisco",
+    "join_date": "2018-03-22"
+  },
+  {
+    "id": 4,
+    "name": "David Wilson",
+    "age": 31,
+    "department": "Marketing",
+    "salary": 68000,
+    "city": "Chicago",
+    "join_date": "2021-09-10"
+  },
+  {
+    "id": 5,
+    "name": "Emma Brown",
+    "age": 29,
+    "department": "Sales",
+    "salary": 72000,
+    "city": "Boston",
+    "join_date": "2020-11-05"
+  },
+  {
+    "id": 6,
+    "name": "Frank Miller",
+    "age": 38,
+    "department": "Engineering",
+    "salary": 105000,
+    "city": "Seattle",
+    "join_date": "2017-07-18"
+  },
+  {
+    "id": 7,
+    "name": "Grace Lee",
+    "age": 26,
+    "department": "Marketing",
+    "salary": 62000,
+    "city": "Austin",
+    "join_date": "2022-02-14"
+  },
+  {
+    "id": 8,
+    "name": "Henry Taylor",
+    "age": 44,
+    "department": "Sales",
+    "salary": 88000,
+    "city": "New York",
+    "join_date": "2016-04-30"
+  }
+]

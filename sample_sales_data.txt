@@ -1,0 +1,17 @@
+region	salesperson	product_category	units_sold	revenue	quarter	year
+North	John Smith	Electronics	245	24500	Q1	2024
+South	Mary Johnson	Furniture	189	37800	Q1	2024
+East	Robert Davis	Electronics	312	31200	Q1	2024
+West	Sarah Wilson	Office Supplies	156	7800	Q1	2024
+North	John Smith	Furniture	98	19600	Q1	2024
+South	Mary Johnson	Office Supplies	234	11700	Q1	2024
+East	Robert Davis	Furniture	176	35200	Q1	2024
+West	Sarah Wilson	Electronics	289	28900	Q1	2024
+North	John Smith	Office Supplies	412	20600	Q2	2024
+South	Mary Johnson	Electronics	298	29800	Q2	2024
+East	Robert Davis	Office Supplies	367	18350	Q2	2024
+West	Sarah Wilson	Furniture	145	29000	Q2	2024
+North	John Smith	Electronics	334	33400	Q2	2024
+South	Mary Johnson	Furniture	223	44600	Q2	2024
+East	Robert Davis	Electronics	401	40100	Q2	2024
+West	Sarah Wilson	Office Supplies	298	14900	Q2	2024
