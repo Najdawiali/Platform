@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { formatDistanceToNowStrict } from 'date-fns';
-import { Database as DatabaseIcon, Folder as FolderIcon, Search as SearchIcon } from 'lucide-react';
+import { Database as DatabaseIcon, Folder as FolderIcon, Search as SearchIcon, BarChart2, ChevronDown } from 'lucide-react';
 
 import { connectionService } from '../services/connectionService';
 import { datasetService } from '../services/datasetService';
@@ -26,6 +26,7 @@ export const SQLEditorPage: React.FC = () => {
   const [syntaxErrors, setSyntaxErrors] = useState<string[]>([]);
   const [queryResult, setQueryResult] = useState<any>(null);
   const [isVisualizeOpen, setIsVisualizeOpen] = useState(false);
+  const [isVisualizeMenuOpen, setIsVisualizeMenuOpen] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1612,34 +1613,77 @@ export const SQLEditorPage: React.FC = () => {
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!queryResult) return;
-                    setIsVisualizeOpen(true);
-                  }}
-                  disabled={!queryResult}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: queryResult ? '#4f46e5' : '#f1f5f9',
-                    color: queryResult ? 'white' : '#94a3b8',
-                    border: queryResult ? '1px solid #4f46e5' : '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    cursor: queryResult ? 'pointer' : 'not-allowed'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!queryResult) return;
-                    e.currentTarget.style.backgroundColor = '#4338ca';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!queryResult) return;
-                    e.currentTarget.style.backgroundColor = '#4f46e5';
-                  }}
-                >
-                  Visualize
-                </button>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!queryResult) return;
+                      setIsVisualizeMenuOpen(!isVisualizeMenuOpen);
+                    }}
+                    disabled={!queryResult}
+                    style={{
+                      padding: '6px 8px',
+                      backgroundColor: queryResult ? '#4f46e5' : '#f1f5f9',
+                      color: queryResult ? 'white' : '#94a3b8',
+                      border: queryResult ? '1px solid #4f46e5' : '1px solid #e2e8f0',
+                      borderRadius: '6px',
+                      cursor: queryResult ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!queryResult) return;
+                      e.currentTarget.style.backgroundColor = '#4338ca';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!queryResult) return;
+                      e.currentTarget.style.backgroundColor = '#4f46e5';
+                    }}
+                    title="Visualize Results"
+                  >
+                    <BarChart2 size={16} />
+                    <ChevronDown size={12} />
+                  </button>
+                  
+                  {isVisualizeMenuOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '4px',
+                      backgroundColor: 'white',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                      zIndex: 50,
+                      minWidth: '160px',
+                      overflow: 'hidden'
+                    }}>
+                      <button
+                        onClick={() => {
+                          setIsVisualizeOpen(true);
+                          setIsVisualizeMenuOpen(false);
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 12px',
+                          fontSize: '12px',
+                          color: '#1e293b',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        Visualize with config
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {queryResult?.total_pages > 1 && (
                   <>
