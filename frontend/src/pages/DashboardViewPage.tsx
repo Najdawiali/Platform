@@ -914,28 +914,29 @@ const DashboardViewPage: React.FC = () => {
         return { axisKey: 'metric' as const, data: rowsOut, seriesKeys: keptSeries, normalized, hasNegative: normalized && hasNegative };
       })();
 
+      console.log('[RADAR DEBUG] prepared:', prepared);
+
       return (
         <ResponsiveContainer width="100%" height={500}>
           <RadarChart 
-            key={`radar-${prepared.seriesKeys.join('-')}`}
             data={prepared.data} 
             margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
           >
             {showGrid ? <PolarGrid stroke="#e2e8f0" /> : null}
-            <PolarAngleAxis dataKey={prepared.axisKey} style={{ fontSize: '12px', fill: '#64748b' }} />
+            <PolarAngleAxis dataKey={prepared.axisKey} tick={{ fontSize: 12, fill: '#64748b' }} />
             {prepared.normalized ? (
               <PolarRadiusAxis
                 angle={90}
                 domain={prepared.hasNegative ? [-1, 1] : [0, 1]}
                 tickFormatter={(v) => `${Math.round(Number(v) * 100)}%`}
-                style={{ fontSize: '11px', fill: '#64748b' }}
+                tick={{ fontSize: 11, fill: '#64748b' }}
               />
             ) : (
-              <PolarRadiusAxis angle={90} style={{ fontSize: '11px', fill: '#64748b' }} />
+              <PolarRadiusAxis angle={90} tick={{ fontSize: 11, fill: '#64748b' }} />
             )}
             {prepared.seriesKeys.map((k, i) => (
               <Radar
-                key={`${k}-${i}`}
+                key={k}
                 name={k}
                 dataKey={k}
                 stroke={colors[i % colors.length]}
