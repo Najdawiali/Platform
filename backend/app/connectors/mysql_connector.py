@@ -95,6 +95,18 @@ class MySQLConnector(BaseConnector):
             print(f"Error disconnecting from MySQL: {e}")
             return False
 
+    def execute_query(self, query: str) -> pd.DataFrame:
+        """Execute raw SQL query"""
+        if not self.is_connected:
+            if not self.connect():
+                raise Exception("Not connected to MySQL")
+        
+        try:
+            # Use pandas read_sql for convenience
+            return pd.read_sql(query, self.connection)
+        except Exception as e:
+            raise Exception(f"Query execution failed: {e}")
+
     def test_connection(self) -> Dict[str, Any]:
         """Test MySQL connection without storing it"""
         try:
@@ -123,12 +135,38 @@ class MySQLConnector(BaseConnector):
                 "message": f"Connection test failed: {str(e)}"
             }
 
-    def get_tables(self) -> List[str]:
-        """Get list of all tables in the database"""
+    def get_databases(self) -> List[str]:
+        """Get list of all databases on the MySQL server"""
         if not self.is_connected:
             raise Exception("Not connected to MySQL. Call connect() first.")
         
         try:
+            self.cursor.execute("SHOW DATABASES")
+            results = self.cursor.fetchall()
+            
+            # Extract database names from results
+            if results:
+                # Filter out system databases
+                db_key = list(results[0].keys())[0]
+                databases = [row[db_key] for row in results 
+                           if row[db_key] not in ['information_schema', 'mysql', 'performance_schema', 'sys']]
+                return sorted(databases)
+            
+            return []
+        except Error as e:
+            print(f"Error fetching databases: {e}")
+            return []
+    
+    def get_tables(self, database: Optional[str] = None) -> List[str]:
+        """Get list of all tables in the specified database or current database"""
+        if not self.is_connected:
+            raise Exception("Not connected to MySQL. Call connect() first.")
+        
+        try:
+            # Switch to specified database if provided
+            if database:
+                self.cursor.execute(f"USE `{database}`")
+            
             self.cursor.execute("SHOW TABLES")
             results = self.cursor.fetchall()
             
@@ -145,6 +183,24 @@ class MySQLConnector(BaseConnector):
         except Error as e:
             print(f"Error fetching tables: {e}")
             return []
+    
+    def get_databases_with_tables(self) -> Dict[str, List[str]]:
+        """Get all databases with their tables"""
+        if not self.is_connected:
+            raise Exception("Not connected to MySQL. Call connect() first.")
+        
+        try:
+            databases = self.get_databases()
+            result = {}
+            
+            for db in databases:
+                tables = self.get_tables(database=db)
+                result[db] = tables
+            
+            return result
+        except Exception as e:
+            print(f"Error fetching databases with tables: {e}")
+            return {}
 
     def get_schema(self) -> Dict[str, Any]:
         """Get schema information for the current table"""
@@ -198,7 +254,7 @@ class MySQLConnector(BaseConnector):
             print(f"Error getting row count: {e}")
             return 0
 
-    def fetch_data(self, limit: int = 1000, offset: int = 0) -> pd.DataFrame:
+    def fetch_data(self, limit: Optional[int] = None, offset: int = 0) -> pd.DataFrame:
         """
         Fetch data from MySQL table with pagination
         
@@ -216,7 +272,14 @@ class MySQLConnector(BaseConnector):
             raise Exception("No table specified. Set table_name first.")
         
         try:
-            query = f"SELECT * FROM `{self.table_name}` LIMIT {limit} OFFSET {offset}"
+            query = f"SELECT * FROM `{self.table_name}`"
+            
+            if limit is not None:
+                query += f" LIMIT {limit}"
+            
+            if offset > 0:
+                query += f" OFFSET {offset}"
+                
             self.cursor.execute(query)
             rows = self.cursor.fetchall()
             

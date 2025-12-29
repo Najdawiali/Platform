@@ -29,7 +29,7 @@ export const BarChart3D: React.FC<BarChart3DProps> = ({
   colors,
   isLoading = false,
   hasError = false,
-  width = '100%',
+  // width = '100%',
   height = 500,
 }) => {
   if (isLoading) {

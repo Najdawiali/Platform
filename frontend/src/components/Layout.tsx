@@ -12,57 +12,56 @@ export const Layout: React.FC = () => {
   };
 
   const navItems = [
-    { path: '/', label: 'Data Sources', icon: '📁' },
-    { path: '/dashboards', label: 'Dashboards', icon: '📊' },
+    { path: '/', label: 'Home', icon: '🏠' },
+    { path: '/databases', label: 'Databases', icon: '🗄️' },
+    { path: '/insights', label: 'Insights', icon: '💡' },
+    { path: '/dashboards', label: 'Dashboards', icon: '▦' },
+    // Map "AI Agent" to the existing modeling page for now
+    { path: '/model', label: 'AI Agent', icon: '✨' },
   ];
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       {/* Left Sidebar Navigation */}
-      <aside style={{
-        width: '240px',
-        backgroundColor: '#1e293b',
-        color: 'white',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '2px 0 8px rgba(0,0,0,0.1)'
-      }}>
+      <aside
+        style={{
+          width: '248px',
+          backgroundColor: 'white',
+          color: '#0f172a',
+          display: 'flex',
+          flexDirection: 'column',
+          borderRight: '1px solid #e2e8f0',
+        }}
+      >
         {/* Logo */}
-        <div style={{
-          padding: '24px 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)'
-        }}>
+        <div style={{ padding: '20px 18px' }}>
           <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              backgroundColor: '#4f46e5',
-              borderRadius: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '20px'
-            }}>
-              📈
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                backgroundColor: '#4f46e5',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: 900,
+              }}
+            >
+              𝗗
             </div>
-            <span style={{
-              fontSize: '20px',
-              fontWeight: 700,
-              color: 'white',
-              letterSpacing: '-0.5px'
-            }}>
-              DataPlatform
-            </span>
+            <div style={{ lineHeight: 1.1 }}>
+              <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>DataPulse</div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>Analytics</div>
+            </div>
           </Link>
         </div>
 
         {/* Navigation Links */}
-        <nav style={{ flex: 1, padding: '16px 0' }}>
+        <nav style={{ flex: 1, padding: '6px 10px' }}>
           {navItems.map((item) => {
-            const isActive = item.path === '/' 
-              ? location.pathname === '/' 
-              : location.pathname.startsWith(item.path);
-            
+            const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path);
             return (
               <Link
                 key={item.path}
@@ -70,81 +69,61 @@ export const Layout: React.FC = () => {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 20px',
-                  margin: '4px 12px',
-                  borderRadius: '8px',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  margin: '6px 6px',
+                  borderRadius: '12px',
                   textDecoration: 'none',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  backgroundColor: isActive ? '#4f46e5' : 'transparent',
-                  color: isActive ? 'white' : '#cbd5e1',
-                  transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  backgroundColor: isActive ? '#eef2ff' : 'transparent',
+                  color: isActive ? '#4f46e5' : '#64748b',
                 }}
               >
-                <span style={{ fontSize: '18px' }}>{item.icon}</span>
+                <span style={{ fontSize: '16px' }}>{item.icon}</span>
                 <span>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        {/* User Section */}
-        <div style={{
-          padding: '20px',
-          borderTop: '1px solid rgba(255,255,255,0.1)'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '12px'
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                backgroundColor: '#4f46e5',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '14px',
-                fontWeight: 600
-              }}>
-                U
-              </div>
-              <span style={{ fontSize: '14px', fontWeight: 500 }}>User</span>
-            </div>
-          </div>
+        {/* Footer */}
+        <div style={{ padding: '14px 16px', borderTop: '1px solid #e2e8f0' }}>
           <button
+            type="button"
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: '#64748b',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            ⚙️ Settings
+          </button>
+          <button
+            type="button"
             onClick={handleLogout}
             style={{
               width: '100%',
-              padding: '8px 16px',
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              color: 'white',
+              padding: '10px 12px',
+              backgroundColor: 'transparent',
               border: 'none',
-              borderRadius: '6px',
+              borderRadius: '12px',
               fontSize: '13px',
-              fontWeight: 500,
+              fontWeight: 700,
+              color: '#64748b',
               cursor: 'pointer',
-              transition: 'all 0.15s ease'
+              textAlign: 'left',
+              marginTop: '4px',
             }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
           >
-            Sign Out
+            ⇦ Sign out
           </button>
         </div>
       </aside>

@@ -76,9 +76,9 @@ class DataPreprocessingService:
         df = DataPreprocessingService._clean_string_columns(df)
         report["transformations_applied"].append("string_cleaning")
 
-        # Step 9: Handle datetime columns
-        df = DataPreprocessingService._parse_datetime_columns(df)
-        report["transformations_applied"].append("datetime_parsing")
+        # Step 9: Handle datetime columns - DISABLED to preserve ISO string format
+        # df = DataPreprocessingService._parse_datetime_columns(df)
+        # report["transformations_applied"].append("datetime_parsing")
 
         # Step 10: Final validation
         df = DataPreprocessingService._final_validation(df)
@@ -207,8 +207,19 @@ class DataPreprocessingService:
         for col in df.columns:
             original_type = str(df[col].dtype)
 
+            # CRITICAL: Convert datetime64 to ISO string FIRST to avoid parquet epoch issues
+            if df[col].dtype == 'datetime64[ns]' or pd.api.types.is_datetime64_any_dtype(df[col]):
+                try:
+                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%dT%H:%M:%S').replace({'NaT': None})
+                    type_report[col] = "string (ISO timestamp)"
+                    print(f"[PREPROCESS] Converted datetime64 column '{col}' to ISO string format")
+                    continue
+                except Exception as e:
+                    print(f"[PREPROCESS] Error converting datetime64 column '{col}': {e}")
+                    pass
+
             # Skip if already optimal type
-            if df[col].dtype in ['int64', 'float64', 'bool', 'datetime64[ns]']:
+            if df[col].dtype in ['int64', 'float64', 'bool']:
                 type_report[col] = original_type
                 continue
 
@@ -260,13 +271,34 @@ class DataPreprocessingService:
                 except Exception:
                     pass
 
-            # Try datetime
+            # Try datetime - but keep as string if already in ISO format
             if DataPreprocessingService._is_datetime_column(non_null):
                 try:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
-                    type_report[col] = "datetime"
+                    # Check if values are already ISO timestamp strings or datetime objects
+                    sample_vals = non_null.head(5)
+                    
+                    # Check if already datetime-like (Timestamp, datetime64, etc.)
+                    is_already_datetime = pd.api.types.is_datetime64_any_dtype(df[col])
+                    
+                    # Check if string values are in ISO format
+                    sample_str = sample_vals.astype(str)
+                    has_date_separator = all(('-' in str(v) or '/' in str(v)) and len(str(v)) >= 10 for v in sample_str if pd.notna(v))
+                    
+                    print(f"[PREPROCESS] Column '{col}' is datetime-like. Already datetime: {is_already_datetime}, Has date separator: {has_date_separator}")
+                    
+                    if is_already_datetime or has_date_separator:
+                        # Convert to string in ISO format to preserve in parquet
+                        df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%dT%H:%M:%S').replace({'NaT': None})
+                        type_report[col] = "string (ISO timestamp)"
+                        print(f"[PREPROCESS] Converted '{col}' to ISO string format")
+                    else:
+                        # Convert to datetime
+                        df[col] = pd.to_datetime(df[col], errors='coerce')
+                        type_report[col] = "datetime"
+                        print(f"[PREPROCESS] Converted '{col}' to datetime64")
                     continue
-                except Exception:
+                except Exception as e:
+                    print(f"[PREPROCESS] Error processing '{col}': {e}")
                     pass
 
             # Default to string/object

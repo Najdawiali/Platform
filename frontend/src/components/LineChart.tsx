@@ -39,7 +39,7 @@ export const LineChart: React.FC<LineChartProps> = ({
   colors,
   isLoading = false,
   hasError = false,
-  width = '100%',
+  // width = '100%',
   height = 400,
   chartId = 'default',
 }) => {

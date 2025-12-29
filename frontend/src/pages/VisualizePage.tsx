@@ -10,7 +10,7 @@ import { GlobalFilterPanel, type FilterCondition } from '../components/GlobalFil
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { CalculatedFieldsEditor, type CalculatedFieldDefinition } from '../components/CalculatedFieldsEditor';
 import { DatasetJoinEditor, type JoinConfig } from '../components/DatasetJoinEditor';
-import { DataQualityPanel } from '../components/DataQualityPanel';
+// import { DataQualityPanel } from '../components/DataQualityPanel';
 import type { Dataset, DashboardCreate, DashboardChartCreate } from '../types';
 
 interface ColumnSelection {
@@ -18,6 +18,7 @@ interface ColumnSelection {
   columnName: string;
   displayName: string;
   datasetName: string;
+  type?: string;
 }
 
 interface GaugeConfig {
@@ -86,7 +87,7 @@ interface AreaConfig {
 
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns: ColumnSelection[];  // X-axis (rows in Tableau)
@@ -100,67 +101,11 @@ interface ChartConfig {
 }
 
 // Helper function to detect column type based on data
-const detectColumnType = (values: any[]): 'numeric' | 'date' | 'categorical' => {
-  if (!values || values.length === 0) return 'categorical';
-  
-  const sample = values.slice(0, 100);
-  
-  // Check if numeric
-  const numericCount = sample.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).length;
-  if (numericCount / sample.length > 0.8) return 'numeric';
-  
-  // Check if date
-  const dateCount = sample.filter(v => !isNaN(Date.parse(v))).length;
-  if (dateCount / sample.length > 0.8) return 'date';
-  
-  return 'categorical';
-};
+// (Function removed as it was unused)
+// const detectColumnType = ...
 
 // Helper function to intelligently order columns for chart types
-const smartOrderColumns = (selections: ColumnSelection[], dataMap: Map<string, any[]>, chartType: string): ColumnSelection[] => {
-  if (selections.length === 0) return selections;
-  
-  const ordered = [...selections];
-  const types = ordered.map(sel => ({
-    selection: sel,
-    type: detectColumnType(dataMap.get(sel.columnName) || [])
-  }));
-  
-  // For bar, line, area charts: categorical/date first (X), then numeric (Y)
-  if (['bar', 'line', 'area'].includes(chartType)) {
-    ordered.sort((a, b) => {
-      const aType = types.find(t => t.selection === a)?.type || 'categorical';
-      const bType = types.find(t => t.selection === b)?.type || 'categorical';
-      
-      if (aType === 'categorical' || aType === 'date') return -1;
-      if (bType === 'categorical' || bType === 'date') return 1;
-      return 0;
-    });
-  }
-  
-  // For scatter: numeric columns only
-  if (chartType === 'scatter') {
-    const numericCols = ordered.filter(sel => {
-      const type = types.find(t => t.selection === sel)?.type;
-      return type === 'numeric';
-    });
-    return numericCols;
-  }
-  
-  // For pie: categorical first, then numeric
-  if (chartType === 'pie') {
-    ordered.sort((a, b) => {
-      const aType = types.find(t => t.selection === a)?.type || 'categorical';
-      const bType = types.find(t => t.selection === b)?.type || 'categorical';
-      
-      if (aType === 'categorical' && bType !== 'categorical') return -1;
-      if (aType !== 'categorical' && bType === 'categorical') return 1;
-      return 0;
-    });
-  }
-  
-  return ordered;
-}
+// (Function removed as it was unused and causing build errors)
 
 const COLORS = ['#4f46e5', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
@@ -250,7 +195,8 @@ const MongoDBCollectionItem: React.FC<{
                       datasetId: datasetId,
                       columnName: column.name,
                       displayName: column.name,
-                      datasetName: `${connectionName} - ${collectionName}`
+                      datasetName: `${connectionName} - ${collectionName}`,
+                      type: columnType
                     };
                     setDraggedColumn(columnSelection);
                     e.dataTransfer.effectAllowed = 'copy';
@@ -302,7 +248,7 @@ export const VisualizePage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('design');
   const [charts, setCharts] = useState<ChartConfig[]>([]);
-  const [selectedChartType, setSelectedChartType] = useState<'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi'>('bar');
+  const [selectedChartType, setSelectedChartType] = useState<'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel'>('bar');
   const [hoveredChartType, setHoveredChartType] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [editingChartId, setEditingChartId] = useState<string | null>(null);
@@ -314,7 +260,7 @@ export const VisualizePage: React.FC = () => {
   const [showAreaConfig, setShowAreaConfig] = useState<string | null>(null);
   const [draggedColumn, setDraggedColumn] = useState<ColumnSelection | null>(null);
   const [expandedDatasets, setExpandedDatasets] = useState<Set<string>>(new Set());
-  const [dragTargetChart, setDragTargetChart] = useState<string | null>(null);
+  // const [dragTargetChart, setDragTargetChart] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   const toggleDatasetExpansion = (datasetId: string) => {
@@ -334,8 +280,8 @@ export const VisualizePage: React.FC = () => {
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null });
   const [calculatedFields, setCalculatedFields] = useState<CalculatedFieldDefinition[]>([]);
   const [datasetJoins, setDatasetJoins] = useState<JoinConfig[]>([]);
-  const [showQualityPanel, setShowQualityPanel] = useState(false);
-  const [showAdvancedFeatures, setShowAdvancedFeatures] = useState(false);
+  // const [showQualityPanel, setShowQualityPanel] = useState(false);
+  // const [showAdvancedFeatures, setShowAdvancedFeatures] = useState(false);
   
   // MongoDB connection state
   const [selectedCollections, setSelectedCollections] = useState<Record<string, string[]>>({});
@@ -363,14 +309,14 @@ export const VisualizePage: React.FC = () => {
     queryFn: () => connectionService.getConnections(),
   });
 
-  // Filter to only selected connections (MongoDB and MySQL)
+  // Filter to only selected connections (MongoDB, MySQL, and PostgreSQL)
   const selectedConnections = useMemo(() => {
     return allConnections.filter((conn: any) => 
-      connectionIds.includes(conn.id) && (conn.source_type === 'mongodb' || conn.source_type === 'mysql')
+      connectionIds.includes(conn.id) && (conn.source_type === 'mongodb' || conn.source_type === 'mysql' || conn.source_type === 'postgresql')
     );
   }, [allConnections, connectionIds]);
 
-  // Load collections/tables for each database connection (MongoDB, MySQL, etc.)
+  // Load collections/tables for each database connection (MongoDB, MySQL, PostgreSQL, etc.)
   React.useEffect(() => {
     const loadCollections = async () => {
       for (const conn of selectedConnections) {
@@ -469,25 +415,25 @@ export const VisualizePage: React.FC = () => {
 
       const results: Array<{ selection: ColumnSelection; data: any[] }> = [];
 
-      // Fetch data for each dataset or MongoDB collection
+      // Fetch data for each dataset or database connection (MongoDB, MySQL, PostgreSQL)
       for (const [datasetId, selections] of Object.entries(datasetGroups)) {
         try {
-          // Check if this is a MongoDB connection (format: "conn:{connectionId}:collection:{collectionName}")
+          // Check if this is a database connection (format: "conn:{connectionId}:collection:{collectionName}")
           if (datasetId.startsWith('conn:')) {
             const [, connId, , collectionName] = datasetId.split(':');
-            console.log(`📊 Querying MongoDB: ${collectionName} from connection ${connId}`);
+            console.log(`📊 Querying database: ${collectionName} from connection ${connId}`);
             
-            const mongoData = await connectionService.queryData(connId, collectionName, 1000, 0);
-            const rows = mongoData?.data ?? [];
-            const availableColumns = mongoData?.columns?.map((col: any) => col.name) ?? [];
+            const dbData = await connectionService.queryData(connId, collectionName, 1000, 0);
+            const rows = dbData?.data ?? [];
+            // const availableColumns = dbData?.columns?.map((col: any) => typeof col === 'string' ? col : col.name) ?? dbData?.columns ?? [];
             
-            console.log(`✅ Fetched ${rows.length} rows from MongoDB collection ${collectionName}`);
+            console.log(`✅ Fetched ${rows.length} rows from collection/table ${collectionName}`);
             
             // Extract data for each selected column
             for (const sel of selections) {
               const columnData = rows
-                .map(row => row[sel.columnName])
-                .filter(val => val !== undefined && val !== null);
+                .map((row: any) => row[sel.columnName])
+                .filter((val: any) => val !== undefined && val !== null);
               
               console.log(`  ✓ Column "${sel.displayName}": ${columnData.length} values`);
               results.push({ selection: sel, data: columnData });
@@ -655,7 +601,9 @@ export const VisualizePage: React.FC = () => {
       area: 'Area',
       scatter: 'Scatter',
       gauge: 'Gauge',
-      kpi: 'KPI'
+      kpi: 'KPI',
+      funnel: 'Funnel',
+      treemap: 'Treemap'
     };
 
     const newChart: ChartConfig = {
@@ -842,7 +790,79 @@ export const VisualizePage: React.FC = () => {
     ));
   };
 
+  const validateColumnForChart = (chartType: string, section: 'rows' | 'columns', columnType?: string): boolean => {
+    if (!columnType) return true;
+    
+    const isNumeric = columnType.includes('int') || columnType.includes('float') || columnType.includes('numeric') || columnType.includes('number') || columnType.includes('double') || columnType.includes('decimal');
+    const isDate = columnType.includes('date') || columnType.includes('time') || columnType.includes('timestamp');
+    const isString = !isNumeric && !isDate;
+
+    let warningMessage: string | null = null;
+
+    // KPI Chart
+    if (chartType === 'kpi') {
+      if (section === 'columns' && !isNumeric) { // Value
+        warningMessage = "KPI charts typically use numeric fields for values. Are you sure you want to use a non-numeric field?";
+      }
+    }
+
+    // Bar/Line/Area Charts
+    else if (['bar', 'line', 'area'].includes(chartType)) {
+      if (section === 'rows' && isNumeric) { // X-axis
+        warningMessage = `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} charts usually use categorical or date fields for the X-axis (Rows). Using a numeric field might result in too many bars/points.`;
+      }
+      else if (section === 'columns' && !isNumeric) { // Y-axis
+        warningMessage = `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} charts usually use numeric fields for the Y-axis (Columns).`;
+      }
+    }
+
+    // Scatter Plot
+    else if (chartType === 'scatter') {
+      if (!isNumeric) {
+        warningMessage = "Scatter plots require numeric fields for both axes to show correlations.";
+      }
+    }
+
+    // Pie Chart
+    else if (chartType === 'pie') {
+      if (section === 'rows' && !isString && !isDate) { // Category
+        warningMessage = "Pie charts usually use categorical fields for slices (Rows).";
+      }
+      else if (section === 'columns' && !isNumeric) { // Value
+        warningMessage = "Pie charts require numeric fields for slice sizes (Columns).";
+      }
+    }
+
+    // Gauge Chart
+    else if (chartType === 'gauge') {
+      if (section === 'columns' && !isNumeric) {
+        warningMessage = "Gauge charts require a numeric field to show the value.";
+      }
+    }
+
+    // Treemap & Funnel
+    else if (['treemap', 'funnel'].includes(chartType)) {
+      if (section === 'rows' && !isString) { // Category
+        warningMessage = `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} charts usually use categorical fields for grouping (Rows).`;
+      }
+      else if (section === 'columns' && !isNumeric) { // Value
+        warningMessage = `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} charts require numeric fields for sizing (Columns).`;
+      }
+    }
+
+    if (warningMessage) {
+      return window.confirm(`${warningMessage}\n\nDo you want to continue?`);
+    }
+
+    return true;
+  };
+
   const handleAddToRows = (chartId: string, column: ColumnSelection) => {
+    const chart = charts.find(c => c.id === chartId);
+    if (chart && !validateColumnForChart(chart.type, 'rows', column.type)) {
+      return;
+    }
+
     setCharts(charts.map(chart =>
       chart.id === chartId
         ? { ...chart, rowColumns: [...chart.rowColumns, column] }
@@ -851,6 +871,11 @@ export const VisualizePage: React.FC = () => {
   };
 
   const handleAddToColumns = (chartId: string, column: ColumnSelection) => {
+    const chart = charts.find(c => c.id === chartId);
+    if (chart && !validateColumnForChart(chart.type, 'columns', column.type)) {
+      return;
+    }
+
     setCharts(charts.map(chart =>
       chart.id === chartId
         ? { ...chart, colColumns: [...chart.colColumns, column] }
@@ -916,7 +941,8 @@ export const VisualizePage: React.FC = () => {
                   datasetId,
                   columnName,
                   displayName: column.displayName || column.name,
-                  datasetName: dataset?.name || 'Unknown Dataset'
+                  datasetName: dataset?.name || 'Unknown Dataset',
+                  type: column.type
                 }
               ]
             }
@@ -1032,8 +1058,8 @@ export const VisualizePage: React.FC = () => {
       }
       
       // Create temp chart configs to fetch data for specific columns
-      const tempChartX = { ...chart, columnSelections: [xAxisCol] };
-      const tempChartY = { ...chart, columnSelections: [yAxisCol] };
+      const tempChartX = { ...chart, columnSelections: [xAxisCol], rowColumns: [], colColumns: [] };
+      const tempChartY = { ...chart, columnSelections: [yAxisCol], rowColumns: [], colColumns: [] };
       
       const xChartData = getChartData(tempChartX);
       const yChartData = getChartData(tempChartY);
@@ -1182,8 +1208,8 @@ export const VisualizePage: React.FC = () => {
       }
       
       // Create temp chart configs to fetch data for specific columns
-      const tempChartLabel = { ...chart, columnSelections: [labelCol] };
-      const tempChartValue = { ...chart, columnSelections: [valueCol] };
+      const tempChartLabel = { ...chart, columnSelections: [labelCol], rowColumns: [], colColumns: [] };
+      const tempChartValue = { ...chart, columnSelections: [valueCol], rowColumns: [], colColumns: [] };
       
       const labelChartData = getChartData(tempChartLabel);
       const valueChartData = getChartData(tempChartValue);
@@ -1304,7 +1330,7 @@ export const VisualizePage: React.FC = () => {
       }
       
       // Create temp chart config to fetch X-axis data
-      const tempChartX = { ...chart, columnSelections: [xAxisCol] };
+      const tempChartX = { ...chart, columnSelections: [xAxisCol], rowColumns: [], colColumns: [] };
       const xChartData = getChartData(tempChartX);
       const xData = xChartData[0]?.data || [];
       
@@ -1316,7 +1342,7 @@ export const VisualizePage: React.FC = () => {
       // Build series for each Y-axis column
       const series = yAxisCols.map((yCol) => {
         // Fetch data for this Y-axis column
-        const tempChartY = { ...chart, columnSelections: [yCol] };
+        const tempChartY = { ...chart, columnSelections: [yCol], rowColumns: [], colColumns: [] };
         const yChartData = getChartData(tempChartY);
         const yData = yChartData[0]?.data || [];
         
@@ -1469,8 +1495,8 @@ export const VisualizePage: React.FC = () => {
 
     if (!xCol || !yCol) return [];
 
-    const tempChartX = { ...chart, columnSelections: [xCol] };
-    const tempChartY = { ...chart, columnSelections: [yCol] };
+    const tempChartX = { ...chart, columnSelections: [xCol], rowColumns: [], colColumns: [] };
+    const tempChartY = { ...chart, columnSelections: [yCol], rowColumns: [], colColumns: [] };
 
     const xChartData = getChartData(tempChartX);
     const yChartData = getChartData(tempChartY);
@@ -1531,6 +1557,63 @@ export const VisualizePage: React.FC = () => {
       console.error('Error transforming area/scatter data:', error);
       return [];
     }
+  };
+
+  // Transform data for Treemap and Funnel (Category + Value)
+  const getTreemapData = (chart: ChartConfig) => {
+    // Similar logic to Pie chart: 1 Category (Rows), 1 Value (Columns)
+    const hasRowsCols = chart.rowColumns.length > 0 || chart.colColumns.length > 0;
+    const columnsToUse = hasRowsCols ? [...chart.rowColumns, ...chart.colColumns] : chart.columnSelections;
+    
+    if (columnsToUse.length === 0) return [];
+
+    try {
+      const labelCol = chart.rowColumns[0] || columnsToUse[0];
+      const valueCol = chart.colColumns[0] || columnsToUse[1];
+      
+      if (!labelCol || !valueCol) return [];
+      
+      // Clear rowColumns and colColumns to ensure we only fetch the specific column
+      const tempChartLabel = { ...chart, columnSelections: [labelCol], rowColumns: [], colColumns: [] };
+      const tempChartValue = { ...chart, columnSelections: [valueCol], rowColumns: [], colColumns: [] };
+      
+      const labelChartData = getChartData(tempChartLabel);
+      const valueChartData = getChartData(tempChartValue);
+      
+      const labels = labelChartData[0]?.data || [];
+      const values = valueChartData[0]?.data || [];
+
+      const minLength = Math.min(labels.length, values.length);
+      const aggregated: Record<string, number> = {};
+      
+      for (let i = 0; i < minLength; i++) {
+        const label = String(labels[i]);
+        const val = values[i];
+        const numVal = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+        
+        if (!isNaN(numVal)) {
+          aggregated[label] = (aggregated[label] || 0) + numVal;
+        }
+      }
+      
+      const labelKey = labelCol.displayName;
+      const valueKey = valueCol.displayName;
+
+      return Object.entries(aggregated)
+        .map(([name, value]) => ({ 
+          [labelKey]: name, 
+          [valueKey]: value 
+        }))
+        .sort((a, b) => (Number(b[valueKey]) || 0) - (Number(a[valueKey]) || 0))
+        .slice(0, 20); // Limit for readability
+    } catch (error) {
+      console.error('Error transforming treemap data:', error);
+      return [];
+    }
+  };
+
+  const getFunnelData = (chart: ChartConfig) => {
+    return getTreemapData(chart);
   };
 
   const isChartDataLoading = chartDataQueries.isLoading;
@@ -1918,6 +2001,8 @@ export const VisualizePage: React.FC = () => {
                     <option value="gauge">🎯 Gauge Chart</option>
                     <option value="kpi">💯 KPI Card</option>
                     <option value="table">📋 Table</option>
+                    <option value="treemap">🔲 Treemap</option>
+                    <option value="funnel">🔻 Funnel Chart</option>
                   </select>
                 </div>
                 {/* Tooltip descriptions */}
@@ -1928,6 +2013,11 @@ export const VisualizePage: React.FC = () => {
                   {selectedChartType === 'area' && '📉 Filled line chart. Best for cumulative data and trends.'}
                   {selectedChartType === 'scatter' && '⚪ Show correlation between variables. Best for finding relationships.'}
                   {selectedChartType === 'gauge' && '🎯 Progress indicator. Best for showing completion (0-100%).'}
+                  {selectedChartType === 'kpi' && '💯 Single metric display. Best for headline numbers.'}
+                  {selectedChartType === 'table' && '📋 Raw data view. Best for detailed inspection.'}
+                  {selectedChartType === 'treemap' && '🔲 Nested rectangles. Best for hierarchical data and proportions.'}
+                  {selectedChartType === 'funnel' && '🔻 Process stages. Best for conversion rates and pipelines.'}
+                </div>
                   {selectedChartType === 'kpi' && '💯 Big number metric with trend. Best for key performance indicators.'}
                   {selectedChartType === 'table' && '📋 Raw data in rows and columns. Best for detailed inspection.'}
                 </div>
@@ -2068,7 +2158,6 @@ export const VisualizePage: React.FC = () => {
               )}
               </div>
             </div>
-          </div>
 
           {/* Middle Panel - Dataset Columns (Tableau-style) */}
           <div style={{
@@ -2083,9 +2172,50 @@ export const VisualizePage: React.FC = () => {
             flexDirection: 'column'
           }}>
             <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 10 }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                📁 Data Sources
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  📁 Data Sources
+                </h3>
+                {(selectedDatasets.length > 0 || selectedConnections.length > 0) && (
+                  <button
+                    onClick={() => {
+                      // Prepare datasets with full details
+                      const datasetsToPass = selectedDatasets.map(ds => {
+                        const detail = allDatasetDetails.find((d: any) => d.id === ds.id);
+                        return detail || ds;
+                      });
+                      
+                      // Prepare connections with selected tables
+                      const connectionsToPass = selectedConnections.map(conn => ({
+                        ...conn,
+                        selectedTables: selectedCollections[conn.id] || []
+                      }));
+
+                      navigate('/model', { 
+                        state: { 
+                          datasets: datasetsToPass,
+                          connections: connectionsToPass
+                        } 
+                      });
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      backgroundColor: '#eff6ff',
+                      color: '#3b82f6',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Open selected data in Data Flow workspace"
+                  >
+                    <span>🕸️</span> Data Flow
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Dataset list with expandable columns */}
@@ -2115,7 +2245,7 @@ export const VisualizePage: React.FC = () => {
                             borderRadius: '6px',
                             cursor: 'pointer',
                             display: 'flex',
-                            alignments: 'center',
+                            alignItems: 'center',
                             justifyContent: 'space-between',
                             transition: 'all 0.2s',
                             fontSize: '13px',
@@ -2164,7 +2294,8 @@ export const VisualizePage: React.FC = () => {
                                         datasetId: dataset.id,
                                         columnName: column.name,
                                         displayName: column.displayName || column.name,
-                                        datasetName: dataset.name
+                                        datasetName: dataset.name,
+                                        type: columnType
                                       };
                                       setDraggedColumn(columnSelection);
                                       e.dataTransfer.effectAllowed = 'copy';
@@ -2415,6 +2546,8 @@ export const VisualizePage: React.FC = () => {
                           chart.type === 'gauge' ? getGaugeKpiData(chart) :
                           chart.type === 'kpi' ? getGaugeKpiData(chart) :
                           chart.type === 'table' ? getTableData(chart) :
+                          chart.type === 'treemap' ? getTreemapData(chart) :
+                          chart.type === 'funnel' ? getFunnelData(chart) :
                           []
                         }
                         isChartDataLoading={isChartDataLoading}

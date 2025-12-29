@@ -44,3 +44,6 @@ fastapi-cors==0.0.6
 
 pydantic[email]
 openpyxl
+httpcore==0.13.7
+pyarrow==15.0.0
+sqlglot==20.0.0

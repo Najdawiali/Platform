@@ -48,6 +48,19 @@ class ValidationResult(BaseModel):
     """Validation result for uploaded file"""
     is_valid: bool
     errors: List[str]
+
+
+class DatasetQuery(BaseModel):
+    """Request model for SQL query"""
+    query: str
+
+
+class DatasetQueryResult(BaseModel):
+    """Result of a SQL query"""
+    columns: List[str]
+    rows: List[Dict[str, Any]]
+    row_count: int
+    execution_time_ms: float
     warnings: List[str]
 
 

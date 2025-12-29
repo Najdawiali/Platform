@@ -10,11 +10,14 @@ const DashboardsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  // Fetch dashboards
-  const { data: dashboards = [], isLoading } = useQuery({
+  // Fetch dashboards (exclude single-chart insights)
+  const { data: allDashboards = [], isLoading } = useQuery({
     queryKey: ['dashboards'],
     queryFn: dashboardService.getDashboards,
   });
+
+  // Filter to show only multi-chart dashboards (insights have chart_count === 1)
+  const dashboards = allDashboards.filter(d => d.chart_count !== 1);
 
   // Delete mutation
   const deleteMutation = useMutation({

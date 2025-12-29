@@ -187,6 +187,49 @@ class MongoDBConnector(BaseConnector):
             validation_result["is_valid"] = False
 
         return validation_result
+    
+    def get_databases(self) -> List[str]:
+        """Get list of all databases on the MongoDB server"""
+        if not self.is_connected:
+            raise RuntimeError("Not connected. Call connect() first.")
+
+        try:
+            db_names = self.client.list_database_names()
+            # Filter out system databases
+            return [db for db in db_names if db not in ['admin', 'config', 'local']]
+        except Exception as e:
+            print(f"Error fetching databases: {e}")
+            return []
+    
+    def get_collections(self, database: Optional[str] = None) -> List[str]:
+        """Get list of collections in the specified database or current database"""
+        if not self.is_connected:
+            raise RuntimeError("Not connected. Call connect() first.")
+
+        try:
+            db = self.client[database] if database else self.db
+            return db.list_collection_names()
+        except Exception as e:
+            print(f"Error fetching collections: {e}")
+            return []
+    
+    def get_databases_with_tables(self) -> Dict[str, List[str]]:
+        """Get all databases with their collections"""
+        if not self.is_connected:
+            raise RuntimeError("Not connected. Call connect() first.")
+
+        try:
+            databases = self.get_databases()
+            result = {}
+            
+            for db_name in databases:
+                collections = self.get_collections(database=db_name)
+                result[db_name] = collections
+            
+            return result
+        except Exception as e:
+            print(f"Error fetching databases with collections: {e}")
+            return {}
 
     def get_schema(self) -> Dict[str, Any]:
         """
@@ -325,16 +368,6 @@ class MongoDBConnector(BaseConnector):
 
         except Exception as e:
             raise RuntimeError(f"Failed to read data: {str(e)}")
-
-    def get_collections(self) -> List[str]:
-        """Get list of collections in the database"""
-        if not self.is_connected or self.db is None:
-            raise RuntimeError("Not connected. Call connect() first.")
-
-        try:
-            return self.db.list_collection_names()
-        except Exception as e:
-            raise RuntimeError(f"Failed to list collections: {str(e)}")
 
     def set_collection(self, collection_name: str) -> bool:
         """Set the active collection"""

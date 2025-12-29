@@ -2,8 +2,8 @@ import api from '../config/api';
 import type { 
   Connection,
   ConnectionCreate,
-  ConnectionTestRequest,
-  ConnectionTestResponse,
+  // ConnectionTestRequest,
+  // ConnectionTestResponse,
   SourceSelectionResponse
 } from '../types';
 
@@ -55,6 +55,14 @@ export const connectionService = {
   },
 
   /**
+   * Get connection config including credentials (for edit UI)
+   */
+  async getConnectionConfig(id: string): Promise<any> {
+    const response = await api.get(`/api/connections/${id}/config`);
+    return response.data;
+  },
+
+  /**
    * Delete connection
    */
   async deleteConnection(id: string): Promise<void> {
@@ -78,17 +86,42 @@ export const connectionService = {
   },
 
   /**
+   * Get all databases with their tables from a connection
+   */
+  async getDatabases(connectionId: string): Promise<Record<string, string[]>> {
+    const response = await api.get<{ databases: Record<string, string[]> }>(`/api/connections/${connectionId}/databases`);
+    return response.data.databases;
+  },
+
+  /**
    * Query data directly from a database connection
    */
   async queryData(
     connectionId: string,
     collection: string,
     limit: number = 1000,
-    offset: number = 0
+    offset: number = 0,
+    database?: string
   ): Promise<any> {
     const response = await api.get(`/api/connections/${connectionId}/data`, {
-      params: { collection, limit, offset }
+      params: { collection, limit, offset, database }
     });
+    return response.data;
+  },
+
+  /**
+   * Get connection statistics (total tables/collections and total rows)
+   */
+  async getConnectionStats(connectionId: string): Promise<{ total_tables: number; total_rows: number }> {
+    const response = await api.get<{ total_tables: number; total_rows: number }>(`/api/connections/${connectionId}/stats`);
+    return response.data;
+  },
+
+  /**
+   * Sync connection schema using stored credentials
+   */
+  async syncConnection(connectionId: string): Promise<any> {
+    const response = await api.post(`/api/connections/${connectionId}/sync`);
     return response.data;
   },
 };

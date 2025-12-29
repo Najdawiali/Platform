@@ -3,12 +3,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
+import { AuthCallback } from './pages/AuthCallback';
 import { Register } from './pages/Register';
-import { Dashboard } from './pages/Dashboard';
+import { HomePage } from './pages/HomePage';
+import { InsightsPage } from './pages/InsightsPage';
+import { CreateInsightPage } from './pages/CreateInsightPage';
+import { SQLEditorPage } from './pages/SQLEditorPage';
 import { VisualizePage } from './pages/VisualizePage';
 import { DashboardsPage } from './pages/DashboardsPage';
 import { DashboardViewPage } from './pages/DashboardViewPage';
 import { EnterpriseShowcase } from './pages/EnterpriseShowcase';
+import { DataModelingPage } from './pages/DataModelingPage';
+import { DatabasesListPage } from './pages/DatabasesListPage';
+import { DatabaseDetailPage } from './pages/DatabaseDetailPage';
+import { FileUploadsPage } from './pages/FileUploadsPage';
+import { FileDetailPage } from './pages/FileDetailPage';
+import { CreateDatabasePage } from './pages/CreateDatabasePage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +36,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           
           <Route
             path="/"
@@ -35,8 +46,18 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Dashboard />} />
+            <Route index element={<HomePage />} />
+            <Route path="/databases" element={<DatabasesListPage />} />
+            <Route path="/databases/create" element={<CreateDatabasePage />} />
+            <Route path="/databases/file-uploads" element={<FileUploadsPage />} />
+            <Route path="/databases/files/:fileId" element={<FileDetailPage />} />
+            <Route path="/databases/:connectionId" element={<DatabaseDetailPage />} />
+            <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/insights/create" element={<CreateInsightPage />} />
+            <Route path="/insights/sql-editor" element={<SQLEditorPage />} />
+            <Route path="/insights/:id" element={<DashboardViewPage />} />
             <Route path="/visualize" element={<VisualizePage />} />
+            <Route path="/model" element={<DataModelingPage />} />
             <Route path="/dashboards" element={<DashboardsPage />} />
             <Route path="/dashboards/:id" element={<DashboardViewPage />} />
             <Route path="/showcase" element={<EnterpriseShowcase />} />

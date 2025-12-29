@@ -7,6 +7,8 @@ import { AreaChart } from './AreaChart';
 import { ScatterPlot } from './ScatterPlot';
 import { GaugeChart } from './GaugeChart';
 import { KPICard } from './KPICard';
+import { TreemapChart } from './TreemapChart';
+import { FunnelChart } from './FunnelChart';
 
 interface ColumnMetadata {
   name: string;
@@ -51,7 +53,7 @@ interface ScatterConfig {
 
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns?: ColumnSelection[];
@@ -97,12 +99,12 @@ interface ChartCardProps {
 
 export const ChartCard: React.FC<ChartCardProps> = ({
   chart,
-  chartIndex,
+  // chartIndex,
   isEditing,
-  selectedDatasets,
-  allDatasetDetails,
-  datasetDetailsLoading,
-  datasetDetailsError,
+  // selectedDatasets,
+  // allDatasetDetails,
+  // datasetDetailsLoading,
+  // datasetDetailsError,
   chartData,
   isChartDataLoading,
   hasChartDataError,
@@ -110,9 +112,12 @@ export const ChartCard: React.FC<ChartCardProps> = ({
   onEdit,
   onRemove,
   onUpdateTitle,
-  onAddColumn,
-  onRemoveColumn,
+  // onAddColumn,
+  // onRemoveColumn,
 }) => {
+  const rowColumns = chart.rowColumns || [];
+  const colColumns = chart.colColumns || [];
+
   return (
     <div
       style={{
@@ -182,7 +187,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
         {chart.type === 'bar' ? (
           <BarChart3D
             data={chartData}
-            columnSelections={(chart.colColumns && chart.colColumns.length > 0) ? chart.colColumns : chart.columnSelections}
+            columnSelections={(colColumns.length > 0) ? colColumns : chart.columnSelections}
             colors={colors}
             isLoading={isChartDataLoading}
             hasError={hasChartDataError}
@@ -218,7 +223,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
               }}>
                 Error loading data
               </div>
-            ) : (chart.rowColumns.length === 0 && chart.colColumns.length === 0) || chartData.length === 0 ? (
+            ) : (rowColumns.length === 0 && colColumns.length === 0) || chartData.length === 0 ? (
               <div style={{
                 height: '500px',
                 backgroundColor: '#f9fafb',
@@ -234,9 +239,9 @@ export const ChartCard: React.FC<ChartCardProps> = ({
               }}>
                 <div style={{ fontSize: '48px' }}>🍰</div>
                 <div style={{ fontWeight: 600, fontSize: '16px' }}>
-                  {(chart.rowColumns.length === 0 && chart.colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}
+                  {(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}
                 </div>
-                {(chart.rowColumns.length === 0 && chart.colColumns.length === 0) && (
+                {(rowColumns.length === 0 && colColumns.length === 0) && (
                   <div style={{ fontSize: '14px', color: '#9ca3af' }}>
                     Drag columns from the data panel to Rows (labels) and Columns (values)
                   </div>
@@ -259,7 +264,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
         ) : chart.type === 'line' ? (
           <LineChart
             data={chartData}
-            columnSelections={(chart.colColumns && chart.colColumns.length > 0) ? chart.colColumns : chart.columnSelections}
+            columnSelections={(colColumns.length > 0) ? colColumns : chart.columnSelections}
             colors={colors}
             isLoading={isChartDataLoading}
             hasError={hasChartDataError}
@@ -269,7 +274,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
         ) : chart.type === 'table' ? (
           <Table
            data={chartData}
-           columnSelections={[...chart.rowColumns, ...chart.colColumns, ...chart.columnSelections]}
+           columnSelections={[...rowColumns, ...colColumns, ...chart.columnSelections]}
            colors={colors}
            isLoading={isChartDataLoading}
            hasError={hasChartDataError}
@@ -283,16 +288,16 @@ export const ChartCard: React.FC<ChartCardProps> = ({
           ) : hasChartDataError || !chartData || chartData.length === 0 ? (
             <div style={{ height: '500px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
               <div style={{ fontSize: '48px' }}>📈</div>
-              <div style={{ fontWeight: 600 }}>{(chart.rowColumns.length === 0 && chart.colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
-              {(chart.rowColumns.length === 0 && chart.colColumns.length === 0) && (
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
+              {(rowColumns.length === 0 && colColumns.length === 0) && (
                 <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag columns from the data panel to Rows (X-axis) and Columns (Y-axis)</div>
               )}
             </div>
           ) : (
             <AreaChart
               data={chartData}
-              xKey={chart.columnSelections[0]?.displayName || 'category'}
-              yKeys={chart.columnSelections.slice(1).map(s => s.displayName)}
+              xKey={(rowColumns[0] || chart.columnSelections[0])?.displayName || 'category'}
+              yKeys={(colColumns.length > 0 ? colColumns : (chart.columnSelections.length > 0 ? chart.columnSelections.slice(1) : rowColumns.slice(1))).map(s => s.displayName)}
               colors={colors}
               height={500}
             />
@@ -305,21 +310,21 @@ export const ChartCard: React.FC<ChartCardProps> = ({
           ) : hasChartDataError || !chartData || chartData.length === 0 ? (
             <div style={{ height: '500px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
               <div style={{ fontSize: '48px' }}>🟣</div>
-              <div style={{ fontWeight: 600 }}>{(chart.rowColumns.length === 0 && chart.colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
-              {(chart.rowColumns.length === 0 && chart.colColumns.length === 0) && (
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
+              {(rowColumns.length === 0 && colColumns.length === 0) && (
                 <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag columns from the data panel to Rows (X-axis) and Columns (Y-axis)</div>
               )}
             </div>
           ) : (
             <ScatterPlot
               data={chartData}
-              xKey={chart.columnSelections[0]?.displayName || 'x'}
-              yKey={chart.columnSelections[1]?.displayName || 'y'}
+              xKey={(rowColumns[0] || chart.columnSelections[0])?.displayName || 'x'}
+              yKey={(colColumns[0] || chart.columnSelections[1] || rowColumns[1])?.displayName || 'y'}
               sizeKey={chart.scatterConfig?.sizeByColumn || chart.columnSelections[2]?.displayName}
               colors={chart.scatterConfig?.colors || colors}
               height={400}
-              xLabel={chart.columnSelections[0]?.displayName}
-              yLabel={chart.columnSelections[1]?.displayName}
+              xLabel={(rowColumns[0] || chart.columnSelections[0])?.displayName}
+              yLabel={(colColumns[0] || chart.columnSelections[1] || rowColumns[1])?.displayName}
               pointSize={chart.scatterConfig?.pointSize}
               pointOpacity={chart.scatterConfig?.pointOpacity}
               showLabels={chart.scatterConfig?.showLabels}
@@ -334,17 +339,17 @@ export const ChartCard: React.FC<ChartCardProps> = ({
           ) : hasChartDataError || !chartData || chartData.length === 0 ? (
             <div style={{ height: '300px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
               <div style={{ fontSize: '48px' }}>🎯</div>
-              <div style={{ fontWeight: 600 }}>{(chart.rowColumns.length === 0 && chart.colColumns.length === 0) ? 'Drag a numeric column to visualize' : 'No data available'}</div>
-              {(chart.rowColumns.length === 0 && chart.colColumns.length === 0) && (
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag a numeric column to visualize' : 'No data available'}</div>
+              {(rowColumns.length === 0 && colColumns.length === 0) && (
                 <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag a numeric column from the data panel to Columns</div>
               )}
             </div>
           ) : (
             <GaugeChart
-              value={chartData[0]?.[chart.columnSelections[0]?.displayName] || 0}
+              value={chartData[0]?.[(colColumns[0] || chart.columnSelections[0] || rowColumns[0])?.displayName] || 0}
               maxValue={chart.gaugeConfig?.target || 100}
               title={chart.title}
-              subtitle={chart.columnSelections[0]?.displayName}
+              subtitle={(colColumns[0] || chart.columnSelections[0] || rowColumns[0])?.displayName}
               height={300}
               colors={chart.gaugeConfig?.colors}
               thresholds={{
@@ -361,22 +366,81 @@ export const ChartCard: React.FC<ChartCardProps> = ({
           ) : hasChartDataError || !chartData || chartData.length === 0 ? (
             <div style={{ height: '200px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
               <div style={{ fontSize: '48px' }}>📊</div>
-              <div style={{ fontWeight: 600 }}>{(chart.rowColumns.length === 0 && chart.colColumns.length === 0) ? 'Drag a numeric column to visualize' : 'No data available'}</div>
-              {(chart.rowColumns.length === 0 && chart.colColumns.length === 0) && (
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag a numeric column to visualize' : 'No data available'}</div>
+              {(rowColumns.length === 0 && colColumns.length === 0) && (
                 <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag a numeric column from the data panel to Columns</div>
               )}
             </div>
           ) : (
             <KPICard
-              title={chart.columnSelections[0]?.displayName || 'Metric'}
-              value={chartData[0]?.[chart.columnSelections[0]?.displayName] || 0}
-              previousValue={chartData[1]?.[chart.columnSelections[0]?.displayName]}
+              title={(colColumns[0] || chart.columnSelections[0] || rowColumns[0])?.displayName || 'Metric'}
+              value={chartData[0]?.[(colColumns[0] || chart.columnSelections[0] || rowColumns[0])?.displayName] || 0}
+              previousValue={chartData[1]?.[(colColumns[0] || chart.columnSelections[0] || rowColumns[0])?.displayName]}
               format="number"
-              subtitle={chart.columnSelections[0]?.datasetName}
+              subtitle={(colColumns[0] || chart.columnSelections[0] || rowColumns[0])?.datasetName}
               showTrend={chartData.length > 1}
             />
           )
+        ) : chart.type === 'treemap' ? (
+          isChartDataLoading ? (
+            <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+              <span style={{ fontSize: '32px' }}>🔄</span> Loading...
+            </div>
+          ) : hasChartDataError || !chartData || chartData.length === 0 ? (
+            <div style={{ height: '400px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
+              <div style={{ fontSize: '48px' }}>🔲</div>
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
+              {(rowColumns.length === 0 && colColumns.length === 0) && (
+                <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag a category to Rows and a value to Columns</div>
+              )}
+            </div>
+          ) : (
+            <TreemapChart
+              data={chartData}
+              nameKey={(rowColumns[0] || chart.columnSelections[0])?.displayName || 'name'}
+              dataKey={(colColumns[0] || chart.columnSelections[1])?.displayName || 'value'}
+              colors={colors}
+              height={400}
+            />
+          )
+        ) : chart.type === 'funnel' ? (
+          isChartDataLoading ? (
+            <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+              <span style={{ fontSize: '32px' }}>🔄</span> Loading...
+            </div>
+          ) : hasChartDataError || !chartData || chartData.length === 0 ? (
+            <div style={{ height: '400px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
+              <div style={{ fontSize: '48px' }}>🔻</div>
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length === 0 && colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
+              {(rowColumns.length === 0 && colColumns.length === 0) && (
+                <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag a stage to Rows and a value to Columns</div>
+              )}
+            </div>
+          ) : (
+            <FunnelChart
+              data={chartData}
+              nameKey={(rowColumns[0] || chart.columnSelections[0])?.displayName || 'name'}
+              dataKey={(colColumns[0] || chart.columnSelections[1])?.displayName || 'value'}
+              colors={colors}
+              height={400}
+            />
+          )
         ) : null}
+      </div>
+      
+      {/* Chart Description */}
+      <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', fontSize: '13px', color: '#64748b', border: '1px solid #e2e8f0' }}>
+        <strong>💡 Info: </strong>
+        {chart.type === 'bar' && "Bar charts are the standard for looking at a specific value across different categories."}
+        {chart.type === 'pie' && "Pie charts show the relationship of parts to a whole."}
+        {chart.type === 'line' && "Line charts emphasize the overall shape of an entire series of values, usually over time."}
+        {chart.type === 'area' && "Area charts emphasize the magnitude of change over time."}
+        {chart.type === 'scatter' && "Scatter charts show the relationship between two numerical values."}
+        {chart.type === 'gauge' && "Gauge charts show progress toward a goal."}
+        {chart.type === 'kpi' && "KPIs communicate the amount of progress made toward a measurable goal."}
+        {chart.type === 'table' && "Tables work well with quantitative comparisons where you're looking at many values for a single category."}
+        {chart.type === 'treemap' && "Treemaps display hierarchical data as a set of nested rectangles."}
+        {chart.type === 'funnel' && "Funnel charts help visualize a process that has stages."}
       </div>
     </div>
   );

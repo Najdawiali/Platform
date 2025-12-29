@@ -96,6 +96,7 @@ export interface Connection {
   test_status?: string;
   test_message?: string;
   last_tested?: string;
+  last_synced_at?: string;
   created_at: string;
   updated_at?: string;
 }

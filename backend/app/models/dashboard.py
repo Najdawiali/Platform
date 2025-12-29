@@ -1,5 +1,5 @@
 # backend/app/models/dashboard.py
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, ForeignKey, Float
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, ForeignKey, Float, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
@@ -14,6 +14,17 @@ class Dashboard(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    
+    # Execution Mode Configuration
+    execution_mode = Column(String, default="snapshot")  # 'snapshot', 'live', 'scheduled'
+    
+    # Refresh Configuration (for scheduled mode)
+    refresh_schedule = Column(String, nullable=True)  # Cron expression: "0 */6 * * *"
+    auto_refresh_enabled = Column(Boolean, default=False)
+    last_refreshed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Cache Configuration (for live mode)
+    cache_ttl_seconds = Column(Integer, nullable=True)  # Cache duration in seconds
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

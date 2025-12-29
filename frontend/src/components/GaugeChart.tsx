@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface GaugeChartProps {
   value: number;
+  minValue?: number;
   maxValue: number;
   title?: string;
   subtitle?: string;
@@ -18,10 +19,17 @@ interface GaugeChartProps {
   width?: number;
   height?: number;
   unit?: string;
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+  showLegend?: boolean;
+  showPercent?: boolean;
+  showValue?: boolean;
 }
 
 export const GaugeChart: React.FC<GaugeChartProps> = ({
   value,
+  minValue = 0,
   maxValue,
   title,
   subtitle,
@@ -37,9 +45,20 @@ export const GaugeChart: React.FC<GaugeChartProps> = ({
   width: _width = 100,
   height = 300,
   unit = '',
+  decimals = 0,
+  prefix = '',
+  suffix = '',
+  showLegend = true,
+  showPercent = true,
+  showValue = true,
 }) => {
-  // Calculate percentage
-  const percentage = Math.min((value / maxValue) * 100, 100);
+  const safeMax = Number.isFinite(maxValue) ? maxValue : 0;
+  const safeMin = Number.isFinite(minValue) ? minValue : 0;
+  const denom = Math.max(1e-9, safeMax - safeMin);
+  const clampedValue = Math.min(Math.max(value, safeMin), safeMax);
+
+  // Calculate percentage based on min/max range
+  const percentage = Math.min(Math.max(((clampedValue - safeMin) / denom) * 100, 0), 100);
 
   // Determine color based on percentage
   const getColor = () => {
@@ -58,6 +77,13 @@ export const GaugeChart: React.FC<GaugeChartProps> = ({
 
   const cx = 50; // Center X percentage
   const cy = 70; // Center Y percentage (lower to accommodate semicircle)
+
+  const formattedValue = Number.isFinite(clampedValue)
+    ? `${prefix}${clampedValue.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${unit}${suffix}`
+    : '—';
+  const formattedMax = Number.isFinite(safeMax)
+    ? `${prefix}${safeMax.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${unit}${suffix}`
+    : '—';
 
   return (
     <div style={{ width: '100%', textAlign: 'center' }}>
@@ -112,89 +138,95 @@ export const GaugeChart: React.FC<GaugeChartProps> = ({
           zIndex: 10,
         }}
       >
-        <div
-          style={{
-            fontSize: '48px',
-            fontWeight: 700,
-            color: color,
-            lineHeight: '1',
-            marginBottom: '8px',
-          }}
-        >
-          {value.toLocaleString()}{unit}
-        </div>
+        {showValue ? (
+          <div
+            style={{
+              fontSize: '48px',
+              fontWeight: 700,
+              color: color,
+              lineHeight: '1',
+              marginBottom: '8px',
+            }}
+          >
+            {formattedValue}
+          </div>
+        ) : null}
         <div
           style={{
             fontSize: '14px',
             color: '#6b7280',
           }}
         >
-          of {maxValue.toLocaleString()}{unit}
+          {safeMin !== 0 ? `range ${safeMin.toLocaleString()}–${formattedMax}` : `of ${formattedMax}`}
         </div>
-        <div
-          style={{
-            fontSize: '24px',
-            fontWeight: 600,
-            color: color,
-            marginTop: '4px',
-          }}
-        >
-          {percentage.toFixed(1)}%
-        </div>
+        {showPercent ? (
+          <div
+            style={{
+              fontSize: '24px',
+              fontWeight: 600,
+              color: color,
+              marginTop: '4px',
+            }}
+          >
+            {percentage.toFixed(1)}%
+          </div>
+        ) : null}
       </div>
 
       {/* Legend */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '24px',
-          marginTop: '16px',
-          padding: '12px',
-          backgroundColor: '#f9fafb',
-          borderRadius: '8px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div
-            style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: colors.low,
-            }}
-          />
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>
-            Low (&lt; {thresholds.low}%)
-          </span>
+      {showLegend ? (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '24px',
+            marginTop: '16px',
+            padding: '12px',
+            backgroundColor: '#f9fafb',
+            borderRadius: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor: colors.low,
+              }}
+            />
+            <span style={{ fontSize: '12px', color: '#6b7280' }}>
+              Low (&lt; {thresholds.low}%)
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor: colors.medium,
+              }}
+            />
+            <span style={{ fontSize: '12px', color: '#6b7280' }}>
+              Medium ({thresholds.low}-{thresholds.medium}%)
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div
+              style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor: colors.high,
+              }}
+            />
+            <span style={{ fontSize: '12px', color: '#6b7280' }}>
+              High (&gt; {thresholds.medium}%)
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div
-            style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: colors.medium,
-            }}
-          />
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>
-            Medium ({thresholds.low}-{thresholds.medium}%)
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div
-            style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: colors.high,
-            }}
-          />
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>
-            High (&gt; {thresholds.medium}%)
-          </span>
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 };

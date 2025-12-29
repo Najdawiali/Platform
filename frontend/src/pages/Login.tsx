@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -15,13 +17,28 @@ export const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      await authService.login({ email, password });
+      if (isSignUp) {
+        await authService.register({ email, password, full_name: fullName });
+        await authService.login({ email, password });
+      } else {
+        await authService.login({ email, password });
+      }
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to log in');
+      setError(err.response?.data?.detail || `Failed to ${isSignUp ? 'sign up' : 'log in'}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleAuth = () => {
+    // OAuth must use localhost because that's what's configured in Google Console
+    window.location.href = 'http://localhost:8000/api/auth/google';
+  };
+
+  const handleGitHubAuth = () => {
+    // OAuth must use localhost because that's what's configured in GitHub
+    window.location.href = 'http://localhost:8000/api/auth/github';
   };
 
   return (
@@ -35,102 +52,150 @@ export const Login: React.FC = () => {
     }}>
       {/* Left Sidebar - Blue Section */}
       <div style={{
-        width: '440px',
-        background: 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%)',
-        padding: '48px',
+        width: '55%',
+        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #4338ca 100%)',
+        padding: '60px',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        color: 'white'
+        justifyContent: 'flex-start',
+        color: 'white',
+        position: 'relative'
       }}>
         {/* Logo Section */}
-        <div>
+        <div style={{ marginBottom: '80px' }}>
           <div style={{
-            width: '48px',
-            height: '48px',
-            backgroundColor: 'white',
-            borderRadius: '8px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '48px',
-            fontSize: '24px',
-            fontWeight: 'bold',
-            color: '#1e3a8a'
+            gap: '12px',
+            marginBottom: '16px'
           }}>
-            DP
-          </div>
-
-          {/* Brand Name */}
-          <div style={{
-            fontSize: '32px',
-            fontWeight: 'bold',
-            marginBottom: '48px',
-            letterSpacing: '-0.5px'
-          }}>
-            DataPlatform
-          </div>
-
-          {/* Quote Section */}
-          <div style={{
-            fontSize: '18px',
-            lineHeight: '1.7',
-            fontWeight: '400',
-            opacity: 0.95,
-            fontStyle: 'italic'
-          }}>
-            "In the age of information, data quality is not just a technical requirement—it's the foundation of intelligent decision-making. Clean, reliable data transforms chaos into clarity, enabling organizations to move from guesswork to precision."
+            <div style={{
+              width: '44px',
+              height: '44px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px'
+            }}>
+              📊
+            </div>
+            <div style={{
+              fontSize: '28px',
+              fontWeight: 'bold',
+              letterSpacing: '-0.5px'
+            }}>
+              DataPulse
+            </div>
           </div>
         </div>
 
-        {/* Author Section */}
-        <div>
-          <div style={{
-            fontSize: '16px',
-            fontWeight: '600',
-            marginBottom: '4px'
+        {/* Main Heading */}
+        <div style={{ marginBottom: '60px' }}>
+          <h1 style={{
+            fontSize: '48px',
+            fontWeight: 'bold',
+            lineHeight: '1.2',
+            marginBottom: '32px',
+            letterSpacing: '-1px'
           }}>
-            Haitham Alnjdawi
-          </div>
-          <div style={{
+            Transform data into<br />insights ✨
+          </h1>
+          <p style={{
+            fontSize: '18px',
+            lineHeight: '1.7',
+            opacity: 0.9,
+            maxWidth: '480px'
+          }}>
+            The AI-powered analytics platform that turns complex data into actionable insights—no coding required.
+          </p>
+        </div>
+
+        {/* Feature List */}
+        <div style={{ marginBottom: '60px' }}>
+          {[
+            'Connect any data source in seconds',
+            'Ask questions in plain English',
+            'Generate beautiful charts instantly',
+            'Export and share with your team'
+          ].map((feature, idx) => (
+            <div key={idx} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '16px',
+              fontSize: '16px'
+            }}>
+              <span style={{
+                width: '24px',
+                height: '24px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px'
+              }}>
+                ✓
+              </span>
+              <span>{feature}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Trusted By Section */}
+        <div style={{ marginTop: 'auto' }}>
+          <p style={{
             fontSize: '14px',
+            opacity: 0.7,
+            marginBottom: '16px'
+          }}>
+            Trusted by data teams at
+          </p>
+          <div style={{
+            display: 'flex',
+            gap: '32px',
+            fontSize: '18px',
+            fontWeight: '600',
             opacity: 0.8
           }}>
-            Data Platform
+            <span>Acme Inc</span>
+            <span>TechCorp</span>
+            <span>Startup.io</span>
           </div>
         </div>
       </div>
 
-      {/* Right Section - Login Form */}
+      {/* Right Section - Form */}
       <div style={{
         flex: 1,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#ffffff',
+        backgroundColor: '#fafafa',
         padding: '48px'
       }}>
         <div style={{
           width: '100%',
-          maxWidth: '440px'
+          maxWidth: '420px'
         }}>
           {/* Header */}
-          <div style={{ marginBottom: '48px' }}>
-            <h1 style={{
-              fontSize: '32px',
-              fontWeight: '600',
+          <div style={{ marginBottom: '32px' }}>
+            <h2 style={{
+              fontSize: '28px',
+              fontWeight: 'bold',
               color: '#0f172a',
-              marginBottom: '8px',
-              letterSpacing: '-0.5px'
+              marginBottom: '8px'
             }}>
-              Sign in to DataPlatform
-            </h1>
+              {isSignUp ? 'Start for free' : 'Welcome back'}
+            </h2>
             <p style={{
               fontSize: '15px',
               color: '#64748b',
               margin: 0
             }}>
-              Transform your data into actionable insights.
+              {isSignUp ? 'Create your account in seconds' : 'Sign in to your account'}
             </p>
           </div>
 
@@ -138,7 +203,7 @@ export const Login: React.FC = () => {
           {error && (
             <div style={{
               marginBottom: '24px',
-              padding: '14px 16px',
+              padding: '12px 16px',
               backgroundColor: '#fef2f2',
               border: '1px solid #fecaca',
               borderRadius: '8px',
@@ -149,41 +214,189 @@ export const Login: React.FC = () => {
             </div>
           )}
 
+          {/* OAuth Buttons */}
+          <div style={{ marginBottom: '24px' }}>
+            <button
+              type="button"
+              onClick={handleGoogleAuth}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                marginBottom: '12px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#f8fafc';
+                e.currentTarget.style.borderColor = '#cbd5e1';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#ffffff';
+                e.currentTarget.style.borderColor = '#e2e8f0';
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Continue with Google
+            </button>
+
+            <button
+              type="button"
+              onClick={handleGitHubAuth}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#f8fafc';
+                e.currentTarget.style.borderColor = '#cbd5e1';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#ffffff';
+                e.currentTarget.style.borderColor = '#e2e8f0';
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+              </svg>
+              Continue with GitHub
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            marginBottom: '24px'
+          }}>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+            <span style={{ fontSize: '13px', color: '#94a3b8' }}>or continue with email</span>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+          </div>
+
           {/* Form */}
           <form onSubmit={handleSubmit}>
+            {/* Full Name Field (Sign Up Only) */}
+            {isSignUp && (
+              <div style={{ marginBottom: '20px' }}>
+                <label htmlFor="fullName" style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#0f172a'
+                }}>
+                  Full Name
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{
+                    position: 'absolute',
+                    left: '16px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: '#94a3b8',
+                    fontSize: '18px'
+                  }}>
+                    👤
+                  </span>
+                  <input
+                    id="fullName"
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Enter your name"
+                    required={isSignUp}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px 12px 48px',
+                      backgroundColor: '#ffffff',
+                      color: '#0f172a',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      outline: 'none',
+                      transition: 'border-color 0.15s ease',
+                      boxSizing: 'border-box'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = '#6366f1'}
+                    onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Email Field */}
             <div style={{ marginBottom: '20px' }}>
               <label htmlFor="email" style={{
                 display: 'block',
                 marginBottom: '8px',
                 fontSize: '14px',
-                fontWeight: '500',
+                fontWeight: '600',
                 color: '#0f172a'
               }}>
-                Email
+                Email Address
               </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email address"
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  backgroundColor: '#ffffff',
-                  color: '#0f172a',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  outline: 'none',
-                  transition: 'border-color 0.15s ease',
-                  boxSizing: 'border-box'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#2563eb'}
-                onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-              />
+              <div style={{ position: 'relative' }}>
+                <span style={{
+                  position: 'absolute',
+                  left: '16px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#94a3b8',
+                  fontSize: '18px'
+                }}>
+                  ✉️
+                </span>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px 12px 48px',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '15px',
+                    outline: 'none',
+                    transition: 'border-color 0.15s ease',
+                    boxSizing: 'border-box'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#6366f1'}
+                  onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                />
+              </div>
             </div>
 
             {/* Password Field */}
@@ -192,33 +405,45 @@ export const Login: React.FC = () => {
                 display: 'block',
                 marginBottom: '8px',
                 fontSize: '14px',
-                fontWeight: '500',
+                fontWeight: '600',
                 color: '#0f172a'
               }}>
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  backgroundColor: '#ffffff',
-                  color: '#0f172a',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  outline: 'none',
-                  transition: 'border-color 0.15s ease',
-                  boxSizing: 'border-box'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#2563eb'}
-                onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-              />
+              <div style={{ position: 'relative' }}>
+                <span style={{
+                  position: 'absolute',
+                  left: '16px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#94a3b8',
+                  fontSize: '18px'
+                }}>
+                  🔒
+                </span>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px 12px 48px',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '15px',
+                    outline: 'none',
+                    transition: 'border-color 0.15s ease',
+                    boxSizing: 'border-box'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#6366f1'}
+                  onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                />
+              </div>
             </div>
 
             {/* Submit Button */}
@@ -227,63 +452,69 @@ export const Login: React.FC = () => {
               disabled={loading}
               style={{
                 width: '100%',
-                padding: '12px 24px',
-                backgroundColor: '#2563eb',
-                color: '#ffffff',
+                padding: '14px 16px',
+                backgroundColor: '#6366f1',
+                color: 'white',
                 border: 'none',
                 borderRadius: '8px',
                 fontSize: '15px',
                 fontWeight: '600',
                 cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.6 : 1,
-                transition: 'background-color 0.15s ease',
-                boxSizing: 'border-box'
+                transition: 'all 0.2s',
+                opacity: loading ? 0.7 : 1,
+                marginBottom: '20px'
               }}
-              onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#1d4ed8')}
-              onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = '#2563eb')}
+              onMouseEnter={(e) => {
+                if (!loading) e.currentTarget.style.backgroundColor = '#4f46e5';
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) e.currentTarget.style.backgroundColor = '#6366f1';
+              }}
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? (isSignUp ? 'Creating Account...' : 'Signing In...') : (isSignUp ? 'Create Account →' : 'Sign In →')}
             </button>
           </form>
 
-          {/* Sign Up Link */}
+          {/* Toggle Sign Up / Sign In */}
           <div style={{
-            marginTop: '24px',
             textAlign: 'center',
             fontSize: '14px',
             color: '#64748b'
           }}>
-            Don't have an account yet?{' '}
-            <Link to="/register" style={{
-              color: '#2563eb',
-              textDecoration: 'none',
-              fontWeight: '600'
-            }}>
-              Sign up
-            </Link>
+            {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+            <button
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setError('');
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#6366f1',
+                fontWeight: '600',
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              {isSignUp ? 'Sign in' : 'Sign up'}
+            </button>
           </div>
 
-          {/* Footer */}
-          <div style={{
-            marginTop: '64px',
-            paddingTop: '24px',
-            borderTop: '1px solid #e2e8f0',
-            textAlign: 'center'
-          }}>
-            <div style={{
-              fontSize: '13px',
+          {/* Terms and Privacy */}
+          {isSignUp && (
+            <p style={{
+              marginTop: '24px',
+              fontSize: '12px',
               color: '#94a3b8',
-              marginBottom: '12px'
+              textAlign: 'center',
+              lineHeight: '1.5'
             }}>
-              © DataPlatform 2025
-            </div>
-            <div style={{
-              fontSize: '13px',
-              color: '#64748b'
-            }}>
-              Empowering data-driven decisions through quality and reliability.
-            </div>
-          </div>
+              By creating an account, you agree to our{' '}
+              <a href="#" style={{ color: '#6366f1', textDecoration: 'underline' }}>Terms of Service</a>
+              {' '}and{' '}
+              <a href="#" style={{ color: '#6366f1', textDecoration: 'underline' }}>Privacy Policy</a>
+            </p>
+          )}
         </div>
       </div>
     </div>

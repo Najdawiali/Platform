@@ -12,7 +12,27 @@ from ..schemas.dashboard import (
 from ..services.dashboard_service import DashboardService
 from .auth import get_current_user
 
+from ..schemas.query import QuerySource
+from pydantic import BaseModel
+from typing import Optional, Dict, Any, List
+
 router = APIRouter(prefix="/api/dashboards", tags=["dashboards"])
+
+
+class SQLInsightChart(BaseModel):
+    chart_type: str
+    x_column: Optional[str] = None
+    y_column: Optional[str] = None
+    title: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+class SQLInsightCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    query: str
+    sources: List[QuerySource]
+    chart: SQLInsightChart
 
 
 @router.post("/", response_model=Dashboard, status_code=status.HTTP_201_CREATED)
@@ -25,6 +45,22 @@ def create_dashboard(
     try:
         created_dashboard = DashboardService.create_dashboard(current_user, dashboard, db)
         return created_dashboard
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/from-sql", response_model=Dashboard, status_code=status.HTTP_201_CREATED)
+def create_sql_insight(
+    insight: SQLInsightCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a 1-chart dashboard (Insight) from a SQL query by materializing results to a dataset."""
+    try:
+        created = DashboardService.create_sql_insight(current_user, insight, db)
+        return created
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -154,3 +190,143 @@ def delete_chart(
         )
     
     return None
+
+
+@router.get("/{dashboard_id}/charts/{chart_id}/aggregated-data")
+def get_chart_aggregated_data(
+    dashboard_id: str,
+    chart_id: str,
+    aggregation: Optional[str] = None,
+    columns: Optional[str] = None,
+    offset: Optional[int] = None,
+    limit: Optional[int] = None,
+    sort_column: Optional[str] = None,
+    sort_dir: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get pre-aggregated data for chart visualization (SNAPSHOT/SCHEDULED mode).
+    
+    This endpoint:
+    - Reads from the materialized parquet file
+    - Performs server-side aggregation using DuckDB
+    - Returns only the data points needed for the chart (10-100 rows)
+    - Dramatically reduces network transfer and improves performance
+    - Supports progressive/lazy loading with offset/limit for large datasets
+    
+    Query params:
+    - aggregation: Override aggregation function (sum, avg, min, max, count)
+    - offset: Starting position for pagination (0-based)
+    - limit: Number of records to return (default: chart-specific)
+    """
+    dashboard = DashboardService.get_dashboard_by_id(dashboard_id, current_user, db)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    
+    chart = next((c for c in dashboard.charts if str(c.id) == str(chart_id)), None)
+    if not chart:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    
+    try:
+        result = DashboardService.get_chart_aggregated_data(
+            chart, db, aggregation, offset, limit, columns, sort_column, sort_dir
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{dashboard_id}/charts/{chart_id}/raw-data")
+def get_chart_raw_data(
+    dashboard_id: str,
+    chart_id: str,
+    page: int = 1,
+    page_size: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get paginated raw data for the Data Preview tab.
+    
+    This endpoint:
+    - Returns paginated raw data from the parquet file
+    - Used for the "Data Preview" tab
+    - Prevents loading entire dataset into browser
+    
+    Query params:
+    - page: Page number (1-based)
+    - page_size: Rows per page (default 100)
+    """
+    dashboard = DashboardService.get_dashboard_by_id(dashboard_id, current_user, db)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    
+    chart = next((c for c in dashboard.charts if str(c.id) == str(chart_id)), None)
+    if not chart:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    
+    try:
+        result = DashboardService.get_chart_raw_data_paginated(chart, db, page, page_size)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{dashboard_id}/refresh")
+def refresh_dashboard(
+    dashboard_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually refresh dashboard data (SNAPSHOT/SCHEDULED mode).
+    
+    This endpoint:
+    - Re-executes the SQL query
+    - Updates the materialized parquet file
+    - Updates last_refreshed_at timestamp
+    
+    Only works for SQL insights.
+    """
+    try:
+        result = DashboardService.refresh_dashboard_data(dashboard_id, current_user, db)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{dashboard_id}/charts/{chart_id}/live-data")
+def get_chart_live_data(
+    dashboard_id: str,
+    chart_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Execute live query and return fresh data (LIVE mode).
+    
+    This endpoint:
+    - Executes the SQL query directly (no caching)
+    - Returns fresh data from the source
+    - Slower but always up-to-date
+    
+    Only use when execution_mode = 'live'.
+    """
+    dashboard = DashboardService.get_dashboard_by_id(dashboard_id, current_user, db)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    
+    chart = next((c for c in dashboard.charts if str(c.id) == str(chart_id)), None)
+    if not chart:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    
+    try:
+        result = DashboardService.execute_live_query(chart, current_user, db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

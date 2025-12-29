@@ -1,4 +1,5 @@
 # backend/app/api/connections.py
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
@@ -10,6 +11,7 @@ from ..schemas.connection import (
     ConnectionCreate,
     ConnectionUpdate,
     ConnectionResponse,
+    ConnectionConfigResponse,
     ConnectionTestRequest,
     ConnectionTestResponse,
     SourceSelectionRequest,
@@ -19,6 +21,8 @@ from ..services.connection_service import ConnectionService
 from .auth import get_current_user
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # Disable redirect_slashes to avoid 307 redirects
 # This allows both /api/connections and /api/connections/ to work
@@ -100,6 +104,38 @@ def list_connections(
     Get all connections for current user
     """
     connections = ConnectionService.get_user_connections(current_user, db)
+
+    try:
+        counts = {}
+        for c in connections:
+            st = str(getattr(c, 'source_type', 'unknown'))
+            counts[st] = counts.get(st, 0) + 1
+        logger.info(
+            "List connections",
+            extra={
+                "user_id": getattr(current_user, 'id', None),
+                "connection_count": len(connections),
+                "counts_by_source_type": counts,
+            },
+        )
+        logger.debug(
+            "Connections detail",
+            extra={
+                "user_id": getattr(current_user, 'id', None),
+                "connections": [
+                    {
+                        "id": getattr(c, 'id', None),
+                        "name": getattr(c, 'name', None),
+                        "source_type": str(getattr(c, 'source_type', None)),
+                        "is_active": getattr(c, 'is_active', None),
+                    }
+                    for c in connections
+                ],
+            },
+        )
+    except Exception:
+        # Never break the endpoint due to logging
+        pass
     return connections
 
 
@@ -121,6 +157,37 @@ def get_connection(
         )
 
     return connection
+
+
+@router.get("/{connection_id}/config", response_model=ConnectionConfigResponse)
+def get_connection_config(
+        connection_id: str,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """Get editable connection config including credentials."""
+    connection = ConnectionService.get_connection_by_id(connection_id, current_user, db)
+
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connection not found"
+        )
+
+    return {
+        "id": connection.id,
+        "user_id": connection.user_id,
+        "name": connection.name,
+        "source_type": connection.source_type,
+        "description": connection.description,
+        "credentials": connection.credentials or {},
+        "is_active": connection.is_active,
+        "test_status": connection.test_status,
+        "test_message": connection.test_message,
+        "last_tested": connection.last_tested,
+        "created_at": connection.created_at,
+        "updated_at": connection.updated_at,
+    }
 
 
 @router.put("/{connection_id}", response_model=ConnectionResponse)
@@ -195,10 +262,72 @@ def get_connection_collections(
     return {"collections": collections}
 
 
+@router.get("/{connection_id}/databases")
+def get_databases_with_tables(
+        connection_id: str,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    Get all databases with their tables/collections from a connection
+    """
+    databases = ConnectionService.get_databases_with_tables(connection_id, current_user, db)
+    return {"databases": databases}
+
+
+@router.get("/{connection_id}/data")
+def get_connection_data(
+        connection_id: str,
+        collection: str = Query(..., description="Table or collection name"),
+        limit: int = Query(100, description="Number of rows to fetch"),
+        offset: int = Query(0, description="Offset for pagination"),
+        database: str = Query(None, description="Database name (optional)"),
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    Get data from a connection (table/collection)
+    """
+    data = ConnectionService.get_connection_data(
+        connection_id=connection_id,
+        user=current_user,
+        db=db,
+        collection=collection,
+        limit=limit,
+        offset=offset,
+        database=database
+    )
+    return data
+
+
+@router.get("/{connection_id}/stats")
+def get_connection_stats(
+        connection_id: str,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    Get statistics about a database connection (total tables/collections and total rows)
+    """
+    stats = ConnectionService.get_connection_stats(connection_id, current_user, db)
+    return stats
+
+
+@router.post("/{connection_id}/sync")
+def sync_connection(
+    connection_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Sync a connection by re-reading schema (tables/collections) using saved credentials."""
+    return ConnectionService.sync_connection(connection_id, current_user, db)
+
+
 @router.get("/{connection_id}/data")
 def query_connection_data(
         connection_id: str,
         collection: str = Query(..., description="Collection/table name to query"),
+    database: str = Query(None, description="Database name (required for multi-database connections)"),
         limit: int = Query(1000, le=10000, description="Max rows to return"),
         offset: int = Query(0, ge=0, description="Number of rows to skip"),
         current_user: User = Depends(get_current_user),
@@ -209,6 +338,6 @@ def query_connection_data(
     Returns data in chunks for efficient streaming.
     """
     data = ConnectionService.query_connection_data(
-        connection_id, collection, limit, offset, current_user, db
+        connection_id, collection, limit, offset, current_user, db, database
     )
     return data

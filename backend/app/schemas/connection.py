@@ -92,11 +92,17 @@ class ConnectionResponse(ConnectionBase):
     test_status: Optional[str]
     test_message: Optional[str]
     last_tested: Optional[datetime]
+    last_synced_at: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
+
+
+class ConnectionConfigResponse(ConnectionBase):
+    """Detailed connection info including credentials (used for edit UI)."""
+    credentials: Dict[str, Any]
 
 
 class ConnectionTestRequest(BaseModel):

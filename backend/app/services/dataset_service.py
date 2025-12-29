@@ -1,6 +1,9 @@
 # backend/app/services/dataset_service.py
 import os
 import shutil
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from typing import Optional, List, Dict, Any
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -142,6 +145,12 @@ class DatasetService:
 
         # Save file
         file_path = os.path.join(user_upload_dir, file.filename)
+
+        # Prevent silent overwrites: require a unique filename per user upload directory
+        if os.path.exists(file_path):
+            raise FileExistsError(
+                f"A file named '{file.filename}' already exists. Please rename the file and try again."
+            )
 
         try:
             # Save uploaded file
@@ -364,6 +373,17 @@ class DatasetService:
             preprocessing_reports = []
             chunk_count = 0
 
+            # PARQUET OPTIMIZATION: Setup writer
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+
+            parquet_path = None
+            writer = None
+
+            # Only create parquet for file-based sources (where we have a file_path)
+            if file_path:
+                parquet_path = f"{file_path}.parquet"
+
             for chunk in connector.fetch_data_chunked():
                 chunk_count += 1
 
@@ -371,18 +391,42 @@ class DatasetService:
                 # This handles ALL edge cases: mixed types, special chars,
                 # bad values, encoding issues, etc.
                 preprocessed_chunk, prep_report = DataPreprocessingService.preprocess_dataframe(chunk)
+                
+                # PARQUET OPTIMIZATION: Write chunk
+                if parquet_path:
+                    try:
+                        # Ensure all columns are strings if they are objects to avoid schema mismatch
+                        # or let pyarrow handle it. For now, we trust preprocessing.
+                        table = pa.Table.from_pandas(preprocessed_chunk)
+                        if writer is None:
+                            writer = pq.ParquetWriter(parquet_path, table.schema)
+                        
+                        # Check for schema compatibility if writer exists?
+                        # Pyarrow might raise error if schema changes. 
+                        # For now, we assume consistent schema from preprocessing.
+                        writer.write_table(table)
+                    except Exception as e:
+                        print(f"Warning: Failed to write chunk {chunk_count} to parquet: {e}")
+
                 preprocessing_reports.append(prep_report)
 
-                # Now run quality checks on CLEAN data
-                quality_report = QualityService.perform_quality_checks(
-                    preprocessed_chunk,
-                    is_first_chunk=(chunk_count == 1)
-                )
-                quality_reports.append(quality_report)
+                # Limit quality checks to first 5 chunks (50k rows)
+                if chunk_count <= 5:
+                    # Now run quality checks on CLEAN data
+                    quality_report = QualityService.perform_quality_checks(
+                        preprocessed_chunk,
+                        is_first_chunk=(chunk_count == 1)
+                    )
+                    quality_reports.append(quality_report)
 
-                # Limit quality checks to first 50k rows for all sources
-                if chunk_count >= 5:
+                # If NOT writing parquet (e.g. DB source), break early
+                # If writing parquet, we MUST continue to process all chunks
+                if not parquet_path and chunk_count >= 5:
                     break
+
+            # Close writer
+            if writer:
+                writer.close()
 
             # Step 6: Aggregate quality reports (universal)
             aggregated_quality = QualityService.aggregate_chunk_reports(quality_reports) if quality_reports else None
@@ -410,16 +454,91 @@ class DatasetService:
                 "schema": schema,
                 "validation": validation_result,
                 "quality_report": aggregated_quality,
-                "preprocessing_summary": preprocessing_summary  # Add preprocessing info
+                "preprocessing_summary": preprocessing_summary,  # Add preprocessing info
+                "parquet_path": parquet_path  # Add parquet path for optimized loading
             }
             dataset.status = "ready"
+            db.commit()
+            db.refresh(dataset)
 
             connector.disconnect()
+
+            # Return dataset info
+            return {
+                "dataset_id": dataset.id,
+                "name": dataset.name,
+                "status": dataset.status,
+                "row_count": dataset.row_count,
+                "column_count": dataset.column_count
+            }
 
         except Exception as e:
             # Delete the dataset record on any error
             db.delete(dataset)
             db.commit()
+            raise e
+
+    @staticmethod
+    def update_dataset_from_dataframe(
+        dataset_id: str,
+        df: pd.DataFrame,
+        db: Session
+    ) -> Dataset:
+        """
+        Update an existing dataset with new data from a dataframe.
+        Used for refreshing SQL insights.
+        
+        Args:
+            dataset_id: ID of the dataset to update
+            df: New dataframe with updated data
+            db: Database session
+            
+        Returns:
+            Updated dataset
+        """
+        from ..config import settings
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+        if not dataset:
+            raise ValueError(f"Dataset {dataset_id} not found")
+        
+        # Get existing parquet path
+        parquet_path = dataset.schema_info.get("parquet_path") if dataset.schema_info else None
+        if not parquet_path:
+            raise ValueError("Dataset doesn't have a parquet file")
+        
+        try:
+            # Preprocess the new data
+            preprocessed_df, _ = DataPreprocessingService.preprocess_dataframe(df)
+            
+            # Overwrite the parquet file
+            table = pa.Table.from_pandas(preprocessed_df)
+            pq.write_table(table, parquet_path)
+            
+            # Update dataset metadata
+            dataset.row_count = len(preprocessed_df)
+            dataset.column_count = len(preprocessed_df.columns)
+            dataset.schema_info = {
+                "schema": {
+                    "columns": [{"name": c} for c in preprocessed_df.columns.tolist()],
+                    "row_count": len(preprocessed_df),
+                    "column_count": len(preprocessed_df.columns),
+                },
+                "parquet_path": parquet_path,
+            }
+            dataset.status = "ready"
+            
+            db.commit()
+            db.refresh(dataset)
+            
+            print(f"[Update] Dataset {dataset_id} updated with {len(preprocessed_df)} rows")
+            
+            return dataset
+            
+        except Exception as e:
+            print(f"[Error] Failed to update dataset: {str(e)}")
             raise e
 
         db.commit()
@@ -529,55 +648,111 @@ class DatasetService:
         return True
 
     @staticmethod
+    def _get_connector(dataset: Dataset, chunk_size: int = 10000):
+        """Helper to get appropriate connector for a dataset"""
+        if dataset.source_type == "csv":
+            return CSVConnector(dataset.file_path, chunk_size=chunk_size)
+        elif dataset.source_type == "excel":
+            return ExcelConnector(dataset.file_path, sheet_name=dataset.sheet_name, chunk_size=chunk_size)
+        elif dataset.source_type == "json":
+            return JSONConnector(dataset.file_path, chunk_size=chunk_size)
+        elif dataset.source_type == "txt":
+            return TXTConnector(dataset.file_path, chunk_size=chunk_size)
+        elif dataset.source_type == "md":
+            return MarkdownConnector(dataset.file_path, chunk_size=chunk_size)
+        elif dataset.source_type == "mdx":
+            return MDXConnector(dataset.file_path, chunk_size=chunk_size)
+        elif dataset.source_type == "pdf":
+            return PDFConnector(dataset.file_path, chunk_size=chunk_size)
+        elif dataset.source_type == "mongodb":
+            from ..connectors.mongodb_connector import MongoDBConnector
+            connection = dataset.connection
+            return MongoDBConnector(
+                connection_string=connection.credentials.get('connection_string'),
+                database=connection.credentials.get('database'),
+                collection=dataset.source_identifier,
+                chunk_size=chunk_size
+            )
+        else:
+            raise Exception(f"Unsupported source type: {dataset.source_type}")
+
+    @staticmethod
+    def _convert_to_parquet(dataset: Dataset) -> str:
+        """
+        Convert dataset to parquet format.
+        Returns the path to the parquet file.
+        """
+        if not dataset.file_path:
+            raise Exception("Cannot convert dataset without file path to parquet")
+
+        parquet_path = f"{dataset.file_path}.parquet"
+        
+        # If already exists, just return it
+        if os.path.exists(parquet_path):
+            return parquet_path
+
+        print(f"Converting dataset {dataset.id} to parquet...")
+        
+        connector = DatasetService._get_connector(dataset)
+        if not connector.connect():
+            raise Exception("Failed to connect to data source for conversion")
+
+        try:
+            # Fetch all data
+            writer = None
+            
+            for chunk in connector.fetch_data_chunked():
+                # Preprocess
+                preprocessed_chunk, _ = DataPreprocessingService.preprocess_dataframe(chunk)
+                
+                # Write to parquet
+                table = pa.Table.from_pandas(preprocessed_chunk)
+                if writer is None:
+                    writer = pq.ParquetWriter(parquet_path, table.schema)
+                writer.write_table(table)
+                
+            if writer:
+                writer.close()
+                
+        finally:
+            connector.disconnect()
+            
+        return parquet_path
+
+    @staticmethod
     def get_dataset_preview(dataset: Dataset, limit: int = 100) -> Dict[str, Any]:
         """Get preview of dataset data with preprocessing applied"""
         if dataset.status != "ready":
             raise Exception(f"Dataset is not ready. Status: {dataset.status}")
 
-        # Create appropriate connector
-        if dataset.source_type == "csv":
-            connector = CSVConnector(dataset.file_path)
-        elif dataset.source_type == "excel":
-            connector = ExcelConnector(dataset.file_path, sheet_name=dataset.sheet_name)
-        elif dataset.source_type == "json":
-            connector = JSONConnector(dataset.file_path)
-        elif dataset.source_type == "txt":
-            connector = TXTConnector(dataset.file_path)
-        elif dataset.source_type == "md":
-            connector = MarkdownConnector(dataset.file_path)
-        elif dataset.source_type == "mdx":
-            connector = MDXConnector(dataset.file_path)
-        elif dataset.source_type == "pdf":
-            connector = PDFConnector(dataset.file_path)
-        elif dataset.source_type == "mongodb":
-            from ..connectors.mongodb_connector import MongoDBConnector
-            connection = dataset.connection
-            connector = MongoDBConnector(
-                connection_string=connection.credentials.get('connection_string'),
-                database=connection.credentials.get('database'),
-                collection=dataset.source_identifier
-            )
-        else:
-            raise Exception(f"Unsupported source type: {dataset.source_type}")
+        # Ensure Parquet exists (Migrate if needed)
+        try:
+            parquet_path = dataset.schema_info.get("parquet_path") if dataset.schema_info else None
+            if not parquet_path or not os.path.exists(parquet_path):
+                # Only attempt conversion for file-based sources
+                if dataset.file_path:
+                    parquet_path = DatasetService._convert_to_parquet(dataset)
+        except Exception as e:
+            print(f"Warning: Parquet conversion failed: {e}")
+            parquet_path = None
 
-        if not connector.connect():
-            raise Exception("Failed to connect to data source")
-
-        df = connector.fetch_data(limit=limit)
-
-        # CRITICAL: Preprocess data before sending to frontend
-        preprocessed_df, _ = DataPreprocessingService.preprocess_dataframe(df)
-
-        preview = {
-            "columns": preprocessed_df.columns.tolist(),
-            "rows": preprocessed_df.to_dict('records'),
-            "total_rows": dataset.row_count,
-            "preview_rows": len(preprocessed_df)
-        }
-
-        connector.disconnect()
-
-        return preview
+        # Read from Parquet
+        if parquet_path and os.path.exists(parquet_path):
+            try:
+                df = pd.read_parquet(parquet_path)
+                df = df.head(limit)
+                df = df.where(pd.notnull(df), None)
+                return {
+                    "columns": df.columns.tolist(),
+                    "rows": df.to_dict('records'),
+                    "total_rows": dataset.row_count,
+                    "preview_rows": len(df)
+                }
+            except Exception as e:
+                print(f"Error reading parquet: {e}")
+                raise e
+        
+        raise Exception("Could not load dataset. Parquet conversion failed and legacy path is disabled.")
 
     @staticmethod
     def get_full_dataset_data(dataset: Dataset, chunk_size: int = 10000) -> Dict[str, Any]:
@@ -588,54 +763,43 @@ class DatasetService:
         if dataset.status != "ready":
             raise Exception(f"Dataset is not ready. Status: {dataset.status}")
 
-        # Create appropriate connector
-        if dataset.source_type == "csv":
-            connector = CSVConnector(dataset.file_path, chunk_size=chunk_size)
-        elif dataset.source_type == "excel":
-            connector = ExcelConnector(dataset.file_path, sheet_name=dataset.sheet_name, chunk_size=chunk_size)
-        elif dataset.source_type == "json":
-            connector = JSONConnector(dataset.file_path, chunk_size=chunk_size)
-        elif dataset.source_type == "txt":
-            connector = TXTConnector(dataset.file_path, chunk_size=chunk_size)
-        elif dataset.source_type == "md":
-            connector = MarkdownConnector(dataset.file_path, chunk_size=chunk_size)
-        elif dataset.source_type == "mdx":
-            connector = MDXConnector(dataset.file_path, chunk_size=chunk_size)
-        elif dataset.source_type == "pdf":
-            connector = PDFConnector(dataset.file_path, chunk_size=chunk_size)
-        elif dataset.source_type == "mongodb":
-            from ..connectors.mongodb_connector import MongoDBConnector
-            connection = dataset.connection
-            connector = MongoDBConnector(
-                connection_string=connection.credentials.get('connection_string'),
-                database=connection.credentials.get('database'),
-                collection=dataset.source_identifier,
-                chunk_size=chunk_size
-            )
-        else:
-            raise Exception(f"Unsupported source type: {dataset.source_type}")
-
-        if not connector.connect():
-            raise Exception("Failed to connect to data source")
-
         max_rows = 100000
-        df = connector.fetch_data(limit=max_rows)
 
-        # CRITICAL: Preprocess before visualization
-        # This ensures clean, consistent data types for charts
-        preprocessed_df, _ = DataPreprocessingService.preprocess_dataframe(df)
+        # Ensure Parquet exists (Migrate if needed)
+        try:
+            parquet_path = dataset.schema_info.get("parquet_path") if dataset.schema_info else None
+            if not parquet_path or not os.path.exists(parquet_path):
+                if dataset.file_path:
+                    parquet_path = DatasetService._convert_to_parquet(dataset)
+        except Exception as e:
+            print(f"Warning: Parquet conversion failed: {e}")
+            parquet_path = None
 
-        result = {
-            "columns": preprocessed_df.columns.tolist(),
-            "data": preprocessed_df.to_dict('records'),
-            "total_rows": dataset.row_count,
-            "returned_rows": len(preprocessed_df),
-            "is_partial": dataset.row_count > max_rows
-        }
+        # Read from Parquet
+        if parquet_path and os.path.exists(parquet_path):
+            try:
+                df = pd.read_parquet(parquet_path)
+                
+                if len(df) > max_rows:
+                    df = df.head(max_rows)
+                    is_partial = True
+                else:
+                    is_partial = False
+                
+                df = df.where(pd.notnull(df), None)
+                
+                return {
+                    "columns": df.columns.tolist(),
+                    "data": df.to_dict('records'),
+                    "total_rows": dataset.row_count,
+                    "returned_rows": len(df),
+                    "is_partial": is_partial
+                }
+            except Exception as e:
+                print(f"Error reading parquet: {e}")
+                raise e
 
-        connector.disconnect()
-
-        return result
+        raise Exception("Could not load dataset. Parquet conversion failed and legacy path is disabled.")
 
     @staticmethod
     def get_quality_report(dataset: Dataset) -> Optional[Dict[str, Any]]:
@@ -643,3 +807,127 @@ class DatasetService:
         if dataset.schema_info and "quality_report" in dataset.schema_info:
             return dataset.schema_info["quality_report"]
         return None
+
+    @staticmethod
+    def execute_sql_query(dataset: Dataset, query: str) -> Dict[str, Any]:
+        """
+        Execute SQL query against the dataset using DuckDB
+        """
+        import duckdb
+        import time
+        
+        start_time = time.time()
+        
+        # Check if parquet file exists
+        parquet_path = dataset.schema_info.get("parquet_path") if dataset.schema_info else None
+        
+        if not parquet_path or not os.path.exists(parquet_path):
+            raise Exception("SQL querying is only available for optimized datasets. Please re-upload the file.")
+            
+        try:
+            # Create in-memory DuckDB connection
+            con = duckdb.connect(database=':memory:')
+            
+            # Register parquet file as a view named 'source'
+            # We use 'source' as the standard table name for single-file queries
+            con.execute(f"CREATE OR REPLACE VIEW source AS SELECT * FROM '{parquet_path}'")
+            
+            # Also register as the dataset name (sanitized) for convenience
+            # simple sanitization: replace non-alphanumeric with underscore
+            sanitized_name = "".join([c if c.isalnum() else "_" for c in dataset.name])
+            if sanitized_name and sanitized_name[0].isdigit():
+                sanitized_name = f"_{sanitized_name}"
+                
+            if sanitized_name and sanitized_name != "source":
+                 con.execute(f"CREATE OR REPLACE VIEW {sanitized_name} AS SELECT * FROM '{parquet_path}'")
+            
+            # Execute query
+            df = con.execute(query).df()
+            
+            # Clean up
+            con.close()
+            
+            # Replace NaN with None
+            df = df.where(pd.notnull(df), None)
+            
+            execution_time = (time.time() - start_time) * 1000
+            
+            return {
+                "columns": df.columns.tolist(),
+                "rows": df.to_dict('records'),
+                "row_count": len(df),
+                "execution_time_ms": execution_time,
+                "warnings": []
+            }
+            
+        except Exception as e:
+            raise Exception(f"Query execution failed: {str(e)}")
+
+    @staticmethod
+    def create_dataset_from_dataframe(
+        df: pd.DataFrame,
+        user: User,
+        name: str,
+        description: Optional[str],
+        db: Session,
+        source_type: str = "sql",
+        source_identifier: Optional[str] = None,
+    ) -> Dataset:
+        """Create a ready dataset from an in-memory dataframe and persist it as parquet."""
+        from ..config import settings
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        if df is None:
+            raise Exception("No dataframe provided")
+
+        dataset = Dataset(
+            user_id=user.id,
+            connection_id=None,
+            name=name,
+            description=description,
+            source_type=source_type,
+            source_identifier=source_identifier or "sql_query",
+            sheet_name=None,
+            original_filename=None,
+            file_path=None,
+            file_size=None,
+            status="processing",
+        )
+
+        db.add(dataset)
+        db.commit()
+        db.refresh(dataset)
+
+        base_dir = os.path.join(settings.UPLOAD_DIR, str(user.id), "sql_insights")
+        os.makedirs(base_dir, exist_ok=True)
+        parquet_path = os.path.join(base_dir, f"{dataset.id}.parquet")
+
+        try:
+            preprocessed_df, _ = DataPreprocessingService.preprocess_dataframe(df)
+            table = pa.Table.from_pandas(preprocessed_df)
+            pq.write_table(table, parquet_path)
+
+            dataset.row_count = len(preprocessed_df)
+            dataset.column_count = len(preprocessed_df.columns)
+            dataset.schema_info = {
+                "schema": {
+                    "columns": [{"name": c} for c in preprocessed_df.columns.tolist()],
+                    "row_count": len(preprocessed_df),
+                    "column_count": len(preprocessed_df.columns),
+                },
+                "parquet_path": parquet_path,
+            }
+            dataset.status = "ready"
+            db.commit()
+            db.refresh(dataset)
+            return dataset
+        except Exception as e:
+            try:
+                if os.path.exists(parquet_path):
+                    os.remove(parquet_path)
+            except Exception:
+                pass
+            db.delete(dataset)
+            db.commit()
+            raise e

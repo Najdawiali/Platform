@@ -30,7 +30,7 @@ export const Pie3DChart: React.FC<Pie3DChartProps> = ({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number>(0);
 
   useEffect(() => {
     if (!containerRef.current || data.length === 0) return;
@@ -74,7 +74,7 @@ export const Pie3DChart: React.FC<Pie3DChartProps> = ({
     const slices: THREE.Mesh[] = [];
     const labels: THREE.Sprite[] = [];
 
-    data.forEach((slice, index) => {
+    data.forEach((slice) => {
       const sliceAngle = (slice.value / total) * Math.PI * 2;
 
       // Create slice geometry using cylindrical segments

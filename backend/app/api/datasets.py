@@ -10,7 +10,9 @@ from ..schemas.dataset import (
     DatasetResponse,
     DatasetDetail,
     DatasetPreview,
-    DatasetFullData
+    DatasetFullData,
+    DatasetQuery,
+    DatasetQueryResult
 )
 from ..services.dataset_service import DatasetService
 from ..services.connection_service import ConnectionService
@@ -95,8 +97,8 @@ async def upload_dataset(
             detail=f"Connection expects PDF file, but got .{file_ext}"
         )
 
-    # Validate file size (100MB limit)
-    MAX_FILE_SIZE = 100 * 1024 * 1024
+    # Validate file size (500MB limit)
+    MAX_FILE_SIZE = 500 * 1024 * 1024
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
@@ -104,7 +106,7 @@ async def upload_dataset(
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File size exceeds maximum limit of 100MB"
+            detail="File size exceeds maximum limit of 500MB"
         )
 
     if file_size == 0:
@@ -129,6 +131,18 @@ async def upload_dataset(
             "datasets_created": len(results),
             "results": results
         }
+
+    except FileExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
     except Exception as e:
         raise HTTPException(
@@ -264,6 +278,9 @@ def preview_dataset(
         preview = DatasetService.get_dataset_preview(dataset, limit=limit)
         return preview
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Failed to preview dataset {dataset_id}:")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to preview dataset: {str(e)}"
@@ -343,3 +360,31 @@ def delete_dataset(
         )
 
     return None
+
+
+@router.post("/{dataset_id}/query", response_model=DatasetQueryResult)
+def query_dataset(
+        dataset_id: str,
+        query_request: DatasetQuery,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    Execute a SQL query against a dataset
+    """
+    dataset = DatasetService.get_dataset_by_id(dataset_id, current_user, db)
+
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found"
+        )
+
+    try:
+        result = DatasetService.execute_sql_query(dataset, query_request.query)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
