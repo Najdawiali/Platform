@@ -27,6 +27,7 @@ export const SQLEditorPage: React.FC = () => {
   const [queryResult, setQueryResult] = useState<any>(null);
   const [isVisualizeOpen, setIsVisualizeOpen] = useState(false);
   const [isVisualizeMenuOpen, setIsVisualizeMenuOpen] = useState(false);
+  const [visualizeMode, setVisualizeMode] = useState<'config' | 'sql_direct'>('config');
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1662,6 +1663,30 @@ export const SQLEditorPage: React.FC = () => {
                     }}>
                       <button
                         onClick={() => {
+                          setVisualizeMode('sql_direct');
+                          setIsVisualizeOpen(true);
+                          setIsVisualizeMenuOpen(false);
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 12px',
+                          fontSize: '12px',
+                          color: '#1e293b',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #f1f5f9'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        Visualize
+                      </button>
+                      <button
+                        onClick={() => {
+                          setVisualizeMode('config');
                           setIsVisualizeOpen(true);
                           setIsVisualizeMenuOpen(false);
                         }}
@@ -1875,6 +1900,7 @@ export const SQLEditorPage: React.FC = () => {
         onSaveSuccess={() => {
           refetchSavedQueries();
         }}
+        mode={visualizeMode}
       />
 
       {/* Clear History Confirmation */}

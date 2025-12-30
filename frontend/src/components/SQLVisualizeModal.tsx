@@ -79,6 +79,7 @@ export interface SQLVisualizeModalProps {
     config: Record<string, any>;
   }) => void;
   onSaveSuccess?: () => void;
+  mode?: 'config' | 'sql_direct';
 }
 
 const COLORS = ['#4f46e5', '#0ea5e9', '#22c55e', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
@@ -560,7 +561,7 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
   },
 };
 
-export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess }) => {
+export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config' }) => {
   const navigate = useNavigate();
   const numericColumns = useMemo(() => inferNumericColumns(columns, rows), [columns, rows]);
   const nonNumericColumns = useMemo(() => inferCategoricalColumns(columns, numericColumns), [columns, numericColumns]);
@@ -869,15 +870,34 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
 
     setChartTitle((prev) => (prev ? prev : ''));
 
-    setXAxes((prev) => {
-      const next = prev.filter((c) => columns.includes(c));
-      return next.length > 0 ? next : (firstCol ? [firstCol] : []);
-    });
-    setYAxes((prev) => {
-      const next = prev.filter((c) => columns.includes(c));
-      const fallback = firstNumeric || firstCol;
-      return next.length > 0 ? next : (fallback ? [fallback] : []);
-    });
+    if (mode === 'sql_direct') {
+      // Direct Mode: Heuristic auto-mapping
+      const firstDim = nonNumericColumns[0] || firstCol;
+      setXAxes([firstDim]);
+
+      // Default to all numeric columns for Y-axis to show multi-series immediately
+      if (numericColumns.length > 0) {
+        setYAxes(numericColumns);
+      } else {
+        setYAxes([firstCol]);
+      }
+
+      // Force "No Aggregation" settings
+      setAggregation('none');
+      setSortOrder('none');
+      setXTimeGrain('none');
+    } else {
+      // Config Mode: Standard defaults (preserve selection if valid)
+      setXAxes((prev) => {
+        const next = prev.filter((c) => columns.includes(c));
+        return next.length > 0 ? next : (firstCol ? [firstCol] : []);
+      });
+      setYAxes((prev) => {
+        const next = prev.filter((c) => columns.includes(c));
+        const fallback = firstNumeric || firstCol;
+        return next.length > 0 ? next : (fallback ? [fallback] : []);
+      });
+    }
 
     // Keep seriesBy valid
     setSeriesBy((prev) => (prev && columns.includes(prev) ? prev : ''));
@@ -2183,8 +2203,8 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const showYSelector = showXYSelectors;
 
   const showSeriesSelector = chartType === 'bar' || chartType === 'line' || chartType === 'area';
-  const showAggregationSelector = showSeriesSelector;
-  const showSortSelector = showSeriesSelector;
+  const showAggregationSelector = showSeriesSelector && mode !== 'sql_direct';
+  const showSortSelector = showSeriesSelector && mode !== 'sql_direct';
 
   const canShowGrid = chartType === 'bar' || chartType === 'line' || chartType === 'area' || chartType === 'scatter';
   const canShowLegend = chartType !== 'table' && chartType !== 'kpi' && chartType !== 'gauge';
@@ -2397,7 +2417,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                       groups={[{ label: 'Columns', options: columns }]}
                     />
 
-                    {isTemporalX && (
+                    {isTemporalX && mode !== 'sql_direct' && (
                       <div style={{ marginTop: '8px' }}>
                         <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '6px' }}>TIME BREAKDOWN</div>
                         <select
@@ -2699,15 +2719,17 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
               <>
                 <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>RADAR SETTINGS</div>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#0f172a', marginBottom: '10px' }}>
-                  <input
-                    type="checkbox"
-                    checked={radarUsePerMetricAggregation}
-                    onChange={(e) => setRadarUsePerMetricAggregation(e.target.checked)}
-                    style={{ accentColor: '#4f46e5' }}
-                  />
-                  Advanced: per-metric aggregation
-                </label>
+                {mode !== 'sql_direct' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#0f172a', marginBottom: '10px' }}>
+                    <input
+                      type="checkbox"
+                      checked={radarUsePerMetricAggregation}
+                      onChange={(e) => setRadarUsePerMetricAggregation(e.target.checked)}
+                      style={{ accentColor: '#4f46e5' }}
+                    />
+                    Advanced: per-metric aggregation
+                  </label>
+                )}
 
                 {yAxes.length > 1 ? (
                   <>
@@ -2769,59 +2791,67 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                   ))}
                 </select>
 
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
-                  {radarUsePerMetricAggregation ? 'Default aggregation (used when a metric has no override)' : 'Aggregation (applies to selected Y columns)'}
-                </div>
-                <select
-                  value={radarAggregation}
-                  onChange={(e) => setRadarAggregation(e.target.value as RadarAggregation)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    color: '#0f172a',
-                    backgroundColor: 'white',
-                    cursor: 'pointer',
-                    marginBottom: '10px',
-                  }}
-                >
-                  <option value="sum">Sum</option>
-                  <option value="avg">Average</option>
-                  <option value="min">Min</option>
-                  <option value="max">Max</option>
-                  <option value="count">Count rows</option>
-                </select>
-                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '-6px', marginBottom: '10px' }}>
-                  {radarUsePerMetricAggregation
-                    ? 'Set per-metric aggregations next to each selected Y column.'
-                    : 'Aggregation is computed per group (region/series) for each selected metric.'}
-                </div>
+                {mode !== 'sql_direct' && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+                      {radarUsePerMetricAggregation ? 'Default aggregation (used when a metric has no override)' : 'Aggregation (applies to selected Y columns)'}
+                    </div>
+                    <select
+                      value={radarAggregation}
+                      onChange={(e) => setRadarAggregation(e.target.value as RadarAggregation)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        backgroundColor: 'white',
+                        cursor: 'pointer',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <option value="sum">Sum</option>
+                      <option value="avg">Average</option>
+                      <option value="min">Min</option>
+                      <option value="max">Max</option>
+                      <option value="count">Count rows</option>
+                    </select>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '-6px', marginBottom: '10px' }}>
+                      {radarUsePerMetricAggregation
+                        ? 'Set per-metric aggregations next to each selected Y column.'
+                        : 'Aggregation is computed per group (region/series) for each selected metric.'}
+                    </div>
+                  </>
+                )}
 
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Sort</div>
-                <select
-                  value={radarSortOrder}
-                  onChange={(e) => setRadarSortOrder(e.target.value as RadarSortOrder)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    color: '#0f172a',
-                    backgroundColor: 'white',
-                    cursor: 'pointer',
-                    marginBottom: '10px',
-                  }}
-                >
-                  <option value="value_desc">Value (desc)</option>
-                  <option value="value_asc">Value (asc)</option>
-                  <option value="label_asc">Label (A→Z)</option>
-                  <option value="label_desc">Label (Z→A)</option>
-                </select>
+                {mode !== 'sql_direct' && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Sort</div>
+                    <select
+                      value={radarSortOrder}
+                      onChange={(e) => setRadarSortOrder(e.target.value as RadarSortOrder)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        backgroundColor: 'white',
+                        cursor: 'pointer',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <option value="value_desc">Value (desc)</option>
+                      <option value="value_asc">Value (asc)</option>
+                      <option value="label_asc">Label (A→Z)</option>
+                      <option value="label_desc">Label (Z→A)</option>
+                    </select>
+                  </>
+                )}
 
                 <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700, marginBottom: '6px' }}>
                   {yAxes.length > 1 && radarAxisMode === 'metrics' ? 'Max series' : 'Max categories'}
@@ -3432,29 +3462,33 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
               <>
                 <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>PIE / DONUT SETTINGS</div>
 
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Aggregation</div>
-                <select
-                  value={pieAggregation}
-                  onChange={(e) => setPieAggregation(e.target.value as PieAggregation)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    color: '#0f172a',
-                    backgroundColor: 'white',
-                    cursor: 'pointer',
-                    marginBottom: '10px',
-                  }}
-                >
-                  <option value="sum">Sum</option>
-                  <option value="avg">Average</option>
-                  <option value="min">Min</option>
-                  <option value="max">Max</option>
-                  <option value="count">Count rows</option>
-                </select>
+                {mode !== 'sql_direct' && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Aggregation</div>
+                    <select
+                      value={pieAggregation}
+                      onChange={(e) => setPieAggregation(e.target.value as PieAggregation)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        backgroundColor: 'white',
+                        cursor: 'pointer',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <option value="sum">Sum</option>
+                      <option value="avg">Average</option>
+                      <option value="min">Min</option>
+                      <option value="max">Max</option>
+                      <option value="count">Count rows</option>
+                    </select>
+                  </>
+                )}
 
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Sort slices</div>
                 <select
