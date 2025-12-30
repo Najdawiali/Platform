@@ -391,13 +391,342 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
   );
 };
 
+const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
+  const [isDraggable, setIsDraggable] = useState(false);
+  const [showWidthMenu, setShowWidthMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  
+  const menuRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const { subtype, text } = item.content;
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowWidthMenu(false);
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleResizeStart = (e: React.MouseEvent, direction: 'width' | 'height' | 'both') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startX = e.clientX;
+    const startY = e.clientY;
+    
+    const startWidth = cardRef.current?.getBoundingClientRect().width || 0;
+    const startHeight = contentRef.current?.getBoundingClientRect().height || 0;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (direction === 'width' || direction === 'both') {
+        const deltaX = moveEvent.clientX - startX;
+        const newWidth = Math.max(300, startWidth + deltaX);
+        if (cardRef.current) {
+            cardRef.current.style.width = `${newWidth}px`;
+        }
+      }
+      
+      if (direction === 'height' || direction === 'both') {
+        const deltaY = moveEvent.clientY - startY;
+        const newHeight = Math.max(100, startHeight + deltaY);
+        if (contentRef.current) {
+            contentRef.current.style.height = `${newHeight}px`;
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      
+      const updates: Partial<CanvasItem> = {};
+      if (direction === 'width' || direction === 'both') {
+         updates.width = cardRef.current?.style.width;
+      }
+      if (direction === 'height' || direction === 'both') {
+         updates.height = contentRef.current?.style.height;
+      }
+      onUpdate(index, updates);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const widthOptions = [
+    { label: 'Full Width', value: '100%' },
+    { label: 'Half Width (1/2)', value: 'calc(50% - 12px)' },
+    { label: 'Two Thirds (2/3)', value: 'calc(66.66% - 8px)' },
+    { label: 'One Third (1/3)', value: 'calc(33.33% - 16px)' },
+    { label: 'One Quarter (1/4)', value: 'calc(25% - 18px)' },
+  ];
+
+  return (
+    <div 
+      ref={cardRef}
+      draggable={isDraggable}
+      onDragStart={() => onDragStart(index)}
+      onDragEnter={() => onDragEnter(index)}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => e.preventDefault()}
+      className="insight-card"
+      style={{
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        padding: '24px',
+        marginBottom: '0',
+        width: item.width || '100%',
+        transition: 'box-shadow 0.2s ease',
+        position: 'relative',
+        ...(isDraggable ? { cursor: 'move' } : {})
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', color: '#64748b', fontSize: '12px', fontWeight: 600, letterSpacing: '0.5px' }}>
+        <div 
+            onMouseEnter={() => setIsDraggable(true)}
+            onMouseLeave={() => setIsDraggable(false)}
+            style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '4px', margin: '-4px 4px -4px -4px', borderRadius: '4px' }}
+            onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
+            onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
+        >
+            <GripVertical size={16} style={{ marginRight: '4px' }} />
+        </div>
+        <Type size={16} style={{ marginRight: '8px', color: '#4f46e5' }} />
+        {subtype === 'header' ? 'TITLE' : 'BODY'}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ position: 'relative' }} ref={menuRef}>
+                <button 
+                    onClick={() => setShowWidthMenu(!showWidthMenu)}
+                    style={{ padding: '4px', borderRadius: '4px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                    <LayoutTemplate size={16} />
+                </button>
+                {showWidthMenu && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: '4px',
+                        backgroundColor: 'white',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                        border: '1px solid #e2e8f0',
+                        width: '200px',
+                        zIndex: 50,
+                        padding: '4px'
+                    }}>
+                        <div style={{ padding: '8px 12px', fontSize: '11px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
+                            Width
+                        </div>
+                        {widthOptions.map(opt => (
+                            <button
+                                key={opt.label}
+                                onClick={() => {
+                                    onUpdate(index, { width: opt.value });
+                                    setShowWidthMenu(false);
+                                }}
+                                style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: '8px 12px',
+                                    fontSize: '14px',
+                                    color: '#334155',
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    borderRadius: '4px'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            
+            <div style={{ position: 'relative' }} ref={moreMenuRef}>
+                <button 
+                    onClick={() => setShowMoreMenu(!showMoreMenu)}
+                    style={{ padding: '4px', borderRadius: '4px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                    <MoreVertical size={16} />
+                </button>
+                {showMoreMenu && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: '4px',
+                        backgroundColor: 'white',
+                        borderRadius: '8px',
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                        border: '1px solid #e2e8f0',
+                        width: '180px',
+                        zIndex: 50,
+                        padding: '4px'
+                    }}>
+                        <div style={{ padding: '8px 12px', fontSize: '11px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
+                            Actions
+                        </div>
+                        <button
+                            onClick={() => {
+                                onRemove(index);
+                                setShowMoreMenu(false);
+                            }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '8px 12px',
+                                fontSize: '14px',
+                                color: '#ef4444',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                borderRadius: '4px'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                            <Trash2 size={14} />
+                            Remove
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+      </div>
+      
+      <div ref={contentRef} style={{ height: item.height || 'auto', width: '100%', minHeight: '50px' }}>
+          {subtype === 'header' ? (
+            <input
+                value={text}
+                onChange={(e) => onUpdate(index, { content: { ...item.content, text: e.target.value } })}
+                placeholder="Title"
+                style={{
+                    fontSize: '24px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    border: 'none',
+                    outline: 'none',
+                    width: '100%',
+                    background: 'transparent',
+                    fontFamily: 'inherit'
+                }}
+            />
+          ) : (
+            <textarea
+                value={text}
+                onChange={(e) => onUpdate(index, { content: { ...item.content, text: e.target.value } })}
+                placeholder="Analysis content goes here..."
+                style={{
+                    fontSize: '16px',
+                    color: '#334155',
+                    border: 'none',
+                    outline: 'none',
+                    width: '100%',
+                    height: '100%',
+                    background: 'transparent',
+                    resize: 'none',
+                    fontFamily: 'inherit',
+                    lineHeight: '1.6'
+                }}
+            />
+          )}
+      </div>
+
+      {/* Resize Handles */}
+      <div
+         onMouseDown={(e) => handleResizeStart(e, 'width')}
+         className="resize-handle-right"
+         style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: '8px',
+            cursor: 'col-resize',
+            zIndex: 10,
+         }}
+       />
+       <div
+         onMouseDown={(e) => handleResizeStart(e, 'height')}
+         className="resize-handle-bottom"
+         style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: '8px',
+            cursor: 'row-resize',
+            zIndex: 10,
+         }}
+       />
+       <div
+         onMouseDown={(e) => handleResizeStart(e, 'both')}
+         className="resize-handle-corner"
+         style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 0,
+            width: '16px',
+            height: '16px',
+            cursor: 'nwse-resize',
+            zIndex: 20,
+         }}
+       >
+         <div style={{
+            position: 'absolute',
+            right: '4px',
+            bottom: '4px',
+            width: '6px',
+            height: '6px',
+            borderRight: '2px solid #cbd5e1',
+            borderBottom: '2px solid #cbd5e1',
+         }} />
+       </div>
+    </div>
+  );
+};
+
 export const CreateDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [showTextMenu, setShowTextMenu] = useState(false);
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
   
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
+  const textMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (textMenuRef.current && !textMenuRef.current.contains(event.target as Node)) {
+        setShowTextMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleSort = () => {
     if (dragItem.current === null || dragOverItem.current === null) return;
@@ -421,6 +750,20 @@ export const CreateDashboardPage: React.FC = () => {
     const newItems = [...canvasItems];
     newItems.splice(index, 1);
     setCanvasItems(newItems);
+  };
+
+  const handleTextAdd = (subtype: 'header' | 'body') => {
+    setCanvasItems(prev => [...prev, {
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'text',
+      content: {
+        subtype,
+        text: ''
+      },
+      width: '100%',
+      height: subtype === 'header' ? 'auto' : '150px'
+    }]);
+    setShowTextMenu(false);
   };
 
   const handleInsightSelect = async (insightSummary: any) => {
@@ -488,10 +831,81 @@ export const CreateDashboardPage: React.FC = () => {
               <BarChart3 size={16} />
               <span>Insight</span>
             </button>
-            <button className="toolbar-btn">
-              <Type size={16} />
-              <span>Text</span>
-            </button>
+            <div style={{ position: 'relative' }} ref={textMenuRef}>
+                <button className="toolbar-btn" onClick={() => setShowTextMenu(!showTextMenu)}>
+                <Type size={16} />
+                <span>Text</span>
+                </button>
+                {showTextMenu && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        marginTop: '4px',
+                        backgroundColor: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                        border: '1px solid #e2e8f0',
+                        width: '160px',
+                        zIndex: 50,
+                        padding: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                    }}>
+                        <button
+                            onClick={() => handleTextAdd('header')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '10px 12px',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: '#334155',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                borderRadius: '8px'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                            <Type size={16} color="#4f46e5" />
+                            Header Text
+                        </button>
+                        <button
+                            onClick={() => handleTextAdd('body')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '10px 12px',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: '#334155',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                borderRadius: '8px'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <div style={{ width: '12px', height: '2px', backgroundColor: '#4f46e5' }} />
+                                <div style={{ width: '12px', height: '2px', backgroundColor: '#4f46e5' }} />
+                                <div style={{ width: '8px', height: '2px', backgroundColor: '#4f46e5' }} />
+                            </div>
+                            Body Text
+                        </button>
+                    </div>
+                )}
+            </div>
             <button className="toolbar-btn">
               <LayoutTemplate size={16} />
               <span>Section</span>
@@ -563,6 +977,20 @@ export const CreateDashboardPage: React.FC = () => {
               if (item.type === 'insight') {
                 return (
                   <DraggableInsightCard
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    onDragStart={(idx) => (dragItem.current = idx)}
+                    onDragEnter={(idx) => (dragOverItem.current = idx)}
+                    onDragEnd={handleSort}
+                    onUpdate={handleUpdateItem}
+                    onRemove={handleRemoveItem}
+                  />
+                );
+              }
+              if (item.type === 'text') {
+                return (
+                  <DraggableTextCard
                     key={item.id}
                     item={item}
                     index={index}
