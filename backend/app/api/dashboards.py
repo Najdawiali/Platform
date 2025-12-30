@@ -113,6 +113,28 @@ def update_dashboard(
     return dashboard
 
 
+@router.put("/{dashboard_id}/from-sql", response_model=Dashboard)
+def update_sql_insight(
+    dashboard_id: str,
+    insight: SQLInsightCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a SQL-based dashboard/insight by re-materializing the query results."""
+    try:
+        updated = DashboardService.update_sql_insight(dashboard_id, current_user, insight, db)
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dashboard not found"
+            )
+        return updated
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.delete("/{dashboard_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dashboard(
     dashboard_id: str,

@@ -189,58 +189,18 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     }
     return true;
   }, []);
-  const debugLastLogAtRef = useRef<number>(0);
+  
+  // Debug refs and functions removed - used for performance logging
   const loadMoreCallCountRef = useRef<number>(0);
   const trimEventCountRef = useRef<number>(0);
   const recentLoadMoreBurstRef = useRef<{ at: number; count: number }>({ at: 0, count: 0 });
   const inFlightRef = useRef<boolean>(false);
   const scrollAdjustmentRef = useRef<number>(0);
 
-  const getHeapMB = useCallback((): number | null => {
-    try {
-      const mem = (performance as any)?.memory;
-      const used = mem?.usedJSHeapSize;
-      if (typeof used !== 'number' || !Number.isFinite(used)) return null;
-      return Math.round((used / 1024 / 1024) * 10) / 10;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const debugLog = useCallback(
-    (tag: string, details?: Record<string, any>, throttleMs = 400) => {
-      if (!debugEnabled) return;
-      const now = Date.now();
-      if (now - debugLastLogAtRef.current < throttleMs) return;
-      debugLastLogAtRef.current = now;
-
-      const heapMB = getHeapMB();
-      const base = {
-        tag,
-        heapMB,
-        dataRows: data.length,
-        offset,
-        hasMore,
-        loading,
-      };
-      // eslint-disable-next-line no-console
-      console.log('[XY debug]', { ...base, ...(details || {}) });
-    },
-    [data.length, debugEnabled, getHeapMB, hasMore, loading, offset],
-  );
-
+  // Debug logging removed
+  
   useEffect(() => {
-    if (!debugEnabled) return;
-
-    // eslint-disable-next-line no-console
-    console.log('[XY debug] enabled', {
-      chartId: chart.id,
-      chartType: chart.chart_type,
-      orientation,
-      windowSize,
-      maxRowsInMemory,
-      hasPerformanceMemory: Boolean((performance as any)?.memory?.usedJSHeapSize),
-    });
+    // Debug log removed
   }, [chart.chart_type, chart.id, debugEnabled, maxRowsInMemory, orientation, windowSize]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -372,14 +332,11 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
   }, [data, xAxes, xKey, xTimeGrain]);
 
   const processed = useMemo(() => {
-    const tStart = performance.now();
+    // Debug timing removed
     // Keep raw rows if no grouping/aggregation/sort is needed.
     const needsAgg = seriesBy || aggregation !== 'none' || sortOrder !== 'none';
     if (!needsAgg) {
-      if (debugEnabled) {
-        // eslint-disable-next-line no-console
-        console.log('[XY debug] processed: pass-through', { rows: baseRows.length });
-      }
+      // Debug log removed
       return baseRows;
     }
 
@@ -497,15 +454,7 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
       });
     }
 
-    if (debugEnabled) {
-      const tEnd = performance.now();
-      // eslint-disable-next-line no-console
-      console.log('[XY debug] processed: recomputed', {
-        inputRows: baseRows.length,
-        outputRows: out.length,
-        tookMs: Math.round(tEnd - tStart),
-      });
-    }
+    // Debug log removed
 
     return out;
   }, [aggregation, baseRows, seriesBy, sortOrder, xAxes.length, xyXAxisKey, yAxes, yKey, debugEnabled]);
@@ -553,7 +502,6 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
       setOffset(firstRows.length);
       setHasMore(metaHasMore);
       setHasPrev(false);
-      debugLog('resetAndLoad:done', { firstRows: firstRows.length, metaHasMore, windowSize, sortForPaging }, 0);
     } catch (e: any) {
       // eslint-disable-next-line no-console
       console.error('[XY debug] resetAndLoad failed', e);
@@ -576,7 +524,6 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
 
     inFlightRef.current = true;
     loadMoreCallCountRef.current += 1;
-    const callNum = loadMoreCallCountRef.current;
 
     // Detect accidental rapid-fire load loops (usually caused by nearEnd logic).
     const now = Date.now();
@@ -590,7 +537,6 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
       console.warn('[XY debug] rapid loadMore burst', { count: recentLoadMoreBurstRef.current.count, at: now });
     }
 
-    debugLog('loadMore:start', { callNum, req: { offset, limit: windowSize, sortForPaging } }, 0);
     setLoading(true);
     try {
       const result = await dashboardService.getChartAggregatedData(dashboardId, chart.id, {
@@ -609,13 +555,7 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
         // Keep the newest rows only.
         if (debugEnabled) {
           trimEventCountRef.current += 1;
-          // eslint-disable-next-line no-console
-          console.log('[XY debug] trim forward', {
-            trimEvent: trimEventCountRef.current,
-            before: merged.length,
-            cap: maxRowsInMemory,
-            dropped: merged.length - maxRowsInMemory,
-          });
+          // Debug log removed
         }
         
         const droppedCount = merged.length - maxRowsInMemory;
@@ -632,7 +572,6 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
       setHasMore(metaHasMore);
       setError(null);
 
-      debugLog('loadMore:done', { callNum, received: next.length, metaHasMore }, 0);
     } catch (e: any) {
       // eslint-disable-next-line no-console
       console.error('[XY debug] loadMore failed', e);
@@ -662,7 +601,6 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     const fetchOffset = Math.max(0, currentStart - fetchLimit);
 
     inFlightRef.current = true;
-    debugLog('loadPrev:start', { req: { offset: fetchOffset, limit: fetchLimit } }, 0);
     setLoading(true);
 
     try {
@@ -682,14 +620,7 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
         if (merged.length <= maxRowsInMemory) return merged;
         
         // Trim from the END (newest data) to make room for older data
-        if (debugEnabled) {
-           // eslint-disable-next-line no-console
-           console.log('[XY debug] trim backward', {
-             before: merged.length,
-             cap: maxRowsInMemory,
-             dropped: merged.length - maxRowsInMemory
-           });
-        }
+        // Debug log removed
         
         // When loading previous data, we are adding rows to the start.
         // We need to shift the scroll position forward by the size of the added rows
@@ -716,7 +647,6 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
       // So:
       setOffset(fetchOffset + Math.min(maxRowsInMemory, prevRows.length + data.length));
 
-      debugLog('loadPrev:done', { received: prevRows.length }, 0);
     } catch (e: any) {
       // eslint-disable-next-line no-console
       console.error('[XY debug] loadPrev failed', e);
@@ -755,16 +685,16 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     } else if (nearStart && hasPrev) {
       loadPrev();
     }
-  }, [debugLog, hasMore, hasPrev, loadMore, loadPrev, orientation]);
+  }, [hasMore, hasPrev, loadMore, loadPrev, orientation]);
 
   // Periodic heartbeat so we can correlate heap growth with user actions.
   useEffect(() => {
     if (!debugEnabled) return;
     const id = window.setInterval(() => {
-      debugLog('heartbeat', undefined, 0);
+      // Heartbeat removed
     }, 3000);
     return () => window.clearInterval(id);
-  }, [debugEnabled, debugLog]);
+  }, [debugEnabled]);
 
   const chartWidth = useMemo(() => {
     if (orientation !== 'vertical') return '100%';
@@ -834,8 +764,15 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     );
   }
 
+  const chartTitle = typeof cfg.chartTitle === 'string' && cfg.chartTitle.trim() ? cfg.chartTitle : null;
+
   return (
     <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, background: 'white' }}>
+      {chartTitle && (
+        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
+          {chartTitle}
+        </div>
+      )}
       {legend}
       <div
         ref={scrollContainerRef}

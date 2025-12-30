@@ -38,6 +38,18 @@ export const dashboardService = {
     const response = await api.put(`/api/dashboards/${dashboardId}`, data);
     return response.data;
   },
+  
+  // Update a SQL-based insight by re-materializing query results
+  async updateSqlInsight(dashboardId: string, payload: {
+    name: string;
+    description?: string;
+    query: string;
+    sources: Array<{ alias: string; type: string; id: string; source_identifier?: string }>;
+    chart: { chart_type: string; x_column?: string; y_column?: string; title?: string; config?: Record<string, any> };
+  }): Promise<Dashboard> {
+    const response = await api.put(`/api/dashboards/${dashboardId}/from-sql`, payload);
+    return response.data;
+  },
 
   // Delete a dashboard
   async deleteDashboard(dashboardId: string): Promise<void> {

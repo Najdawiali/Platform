@@ -575,6 +575,10 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const [saveDescription, setSaveDescription] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
+  
+  // Edit mode tracking - extracted from initialConfig
+  const [editDashboardId, setEditDashboardId] = useState<string | null>(null);
+  const [editChartId, setEditChartId] = useState<string | null>(null);
 
   const [chartType, setChartType] = useState<ChartType>('bar');
     const [iconTooltip, setIconTooltip] = useState<null | { text: string; x: number; y: number }>(null);
@@ -696,6 +700,14 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   // Restore state from initialConfig
   useEffect(() => {
     if (initialConfig && isOpen) {
+      // Extract edit mode tracking IDs
+      if (initialConfig.editDashboardId) {
+        setEditDashboardId(initialConfig.editDashboardId);
+      }
+      if (initialConfig.editChartId) {
+        setEditChartId(initialConfig.editChartId);
+      }
+      
       // Restore Insight Name & Description if provided (for editing)
       // Note: We do NOT sync chartTitle to saveName here. They should be distinct.
       if (initialConfig.insightName) {
@@ -812,6 +824,14 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (typeof initialConfig.scatterMaxPointSize === 'number') setScatterMaxPointSize(initialConfig.scatterMaxPointSize);
     }
   }, [initialConfig, isOpen]);
+  
+  // Clear edit state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setEditDashboardId(null);
+      setEditChartId(null);
+    }
+  }, [isOpen]);
 
     const exportConfig = useCallback(() => {
       const primaryXAxis = xAxes[0] ?? '';
@@ -1746,8 +1766,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         return row;
       });
 
-      console.log('[SQL MODAL RADAR FINAL] seriesKeys:', seriesKeys);
-      console.log('[SQL MODAL RADAR FINAL] First 2 data rows:', JSON.stringify(data.slice(0, 2), null, 2));
+      // Debug logs removed
 
       if (radarGroupOther && rest.length > 0) {
         const other: Record<string, any> = { category: 'Other' };
@@ -4363,20 +4382,20 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                     setSaveBusy(true);
                     setSaveError(null);
                     try {
-                      console.log('Step 1: Saving query to library...');
-                      console.log('Saving with Name:', name);
-                      console.log('Saving with Chart Title:', chartTitle);
+                      const isEditMode = !!(editDashboardId && editChartId);
                       
-                      // 1) Save to Query Library (REQUIRED)
-                      await savedQueryService.createSavedQuery({
-                        name,
-                        description: saveDescription.trim() ? saveDescription.trim() : undefined,
-                        query: queryText,
-                      });
-                      console.log('Saved query created successfully');
-
-                      console.log('Step 2: Creating dashboard insight...');
-                      // 2) Create Dashboard Insight
+                      // Debug logs removed
+                      
+                      // 1) Save to Query Library (REQUIRED for new insights, skip for edits to avoid duplicates)
+                      if (!isEditMode) {
+                        await savedQueryService.createSavedQuery({
+                          name,
+                          description: saveDescription.trim() ? saveDescription.trim() : undefined,
+                          query: queryText,
+                        });
+                      }
+                      
+                      // 2) Prepare chart configuration
                       const isSingleValueChart = chartType === 'kpi' || chartType === 'gauge';
                       const xColumn = isSingleValueChart ? '' : (xAxis || (columns?.[0] ?? ''));
                       const chartCfg = exportConfig().config;
@@ -4389,22 +4408,40 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                           yColumn = ys[0];
                         }
                       }
+                      
+                      const titleToSave = chartTitle || name;
 
-                      const created = await dashboardService.createSqlInsight({
-                        name,
-                        description: saveDescription.trim() ? saveDescription.trim() : undefined,
-                        query: queryText,
-                        sources,
-                        chart: {
-                          chart_type: chartType,
-                          x_column: xColumn || undefined,
-                          y_column: yColumn || undefined,
-                          title: name, // Explicitly use the Save Name for the dashboard item title
-                          config: chartCfg,
-                        },
-                      });
-
-                      console.log('Dashboard insight created successfully:', created);
+                      if (isEditMode) {
+                        // UPDATE MODE: Re-materialize and update existing dashboard insight
+                        await dashboardService.updateSqlInsight(editDashboardId!, {
+                          name,
+                          description: saveDescription.trim() ? saveDescription.trim() : undefined,
+                          query: queryText,
+                          sources,
+                          chart: {
+                            chart_type: chartType,
+                            x_column: xColumn || undefined,
+                            y_column: yColumn || undefined,
+                            title: titleToSave,
+                            config: chartCfg,
+                          },
+                        });
+                      } else {
+                        // CREATE MODE: Create new dashboard from SQL
+                        await dashboardService.createSqlInsight({
+                          name,
+                          description: saveDescription.trim() ? saveDescription.trim() : undefined,
+                          query: queryText,
+                          sources,
+                          chart: {
+                            chart_type: chartType,
+                            x_column: xColumn || undefined,
+                            y_column: yColumn || undefined,
+                            title: titleToSave,
+                            config: chartCfg,
+                          },
+                        });
+                      }
                       setIsSaveModalOpen(false);
                       onSaveSuccess?.();
                       onClose();

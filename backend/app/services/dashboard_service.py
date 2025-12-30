@@ -138,6 +138,8 @@ class DashboardService:
             "sql_query": query_text,
             "sql_sources": [s.model_dump() for s in insight_data.sources],
         }
+        
+        # Debug logs removed
 
         chart = DashboardChart(
             dashboard_id=dashboard.id,
@@ -200,10 +202,18 @@ class DashboardService:
     ) -> Optional[Dashboard]:
         """Get a specific dashboard by ID"""
         
-        return db.query(Dashboard).filter(
+        dashboard = db.query(Dashboard).filter(
             Dashboard.id == dashboard_id,
             Dashboard.user_id == user.id
         ).first()
+        
+        # DEBUG: Log what we're loading
+        if dashboard:
+            import logging
+            logger = logging.getLogger(__name__)
+            # Debug logs removed
+        
+        return dashboard
 
     @staticmethod
     def update_dashboard(
@@ -224,6 +234,92 @@ class DashboardService:
         
         if dashboard_data.description is not None:
             dashboard.description = dashboard_data.description
+        
+        db.commit()
+        db.refresh(dashboard)
+        
+        return dashboard
+    
+    @staticmethod
+    def update_sql_insight(
+        dashboard_id: str,
+        user: User,
+        insight_data,  # SQLInsightCreate from API
+        db: Session
+    ) -> Optional[Dashboard]:
+        """Update a SQL-based dashboard/insight by re-materializing query results."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 1. Get existing dashboard
+        dashboard = DashboardService.get_dashboard_by_id(dashboard_id, user, db)
+        if not dashboard:
+            return None
+        
+        # 2. Get the first (and should be only) chart
+        if not dashboard.charts or len(dashboard.charts) == 0:
+            logger.error(f"Dashboard {dashboard_id} has no charts")
+            return None
+        
+        chart = dashboard.charts[0]
+        
+        # 3. Re-materialize the dataset with new query
+        from ..services.query_service import QueryService
+        
+        query_text = str(insight_data.query).strip()
+        if not query_text:
+            raise ValueError("Query is required")
+        if not insight_data.sources or len(insight_data.sources) == 0:
+            raise ValueError("At least one source is required")
+        
+        # Execute query and get dataframe (same as create_sql_insight)
+        df = QueryService.execute_query_to_dataframe_federated(
+            query=query_text,
+            sources=insight_data.sources,
+            user=user,
+            db=db,
+            max_rows=100000,
+        )
+        
+        # 4. Create or update dataset
+        from ..services.dataset_service import DatasetService
+        
+        # Delete old dataset if exists
+        if chart.dataset_id:
+            old_dataset = db.query(Dataset).filter(Dataset.id == chart.dataset_id).first()
+            if old_dataset:
+                db.delete(old_dataset)
+                db.flush()
+        
+        # Create new dataset
+        dataset_name = f"{insight_data.name} (SQL)" if insight_data.name else "SQL Insight Dataset"
+        dataset = DatasetService.create_dataset_from_dataframe(
+            df=df,
+            user=user,
+            name=dataset_name,
+            description=insight_data.description,
+            db=db
+        )
+        
+        # 5. Update dashboard metadata
+        dashboard.name = insight_data.name
+        if insight_data.description:
+            dashboard.description = insight_data.description
+        
+        # 6. Update chart
+        chart_cfg = insight_data.chart.config or {}
+        chart_cfg = {
+            **chart_cfg,
+            "sql_query": query_text,
+            "sql_sources": [s.model_dump() for s in insight_data.sources],
+        }
+        
+        chart.dataset_id = dataset.id
+        chart.chart_type = insight_data.chart.chart_type
+        chart.x_column = insight_data.chart.x_column
+        chart.y_column = insight_data.chart.y_column
+        chart.title = insight_data.chart.title or insight_data.name
+        chart.config = chart_cfg
         
         db.commit()
         db.refresh(dashboard)

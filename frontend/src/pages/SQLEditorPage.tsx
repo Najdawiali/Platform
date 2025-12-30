@@ -865,7 +865,7 @@ export const SQLEditorPage: React.FC = () => {
           if (chart && chart.config && chart.config.sql_query) {
              const query = chart.config.sql_query;
              setSqlQuery(query);
-             setInsightName(chart.title || dashboard.name);
+             setInsightName(dashboard.name);
              
              // Restore mode
              if (chart.config.mode === 'sql_direct') {
@@ -877,8 +877,10 @@ export const SQLEditorPage: React.FC = () => {
              // Set initial config for the modal to restore state
              setInitialVisualizeConfig({
                ...chart.config,
-               insightName: chart.title || dashboard.name,
-               insightDescription: chart.description
+               insightName: dashboard.name,
+               insightDescription: dashboard.description,
+               editDashboardId: editDashboardId,
+               editChartId: editChartId
              });
 
              // Run the query and open modal

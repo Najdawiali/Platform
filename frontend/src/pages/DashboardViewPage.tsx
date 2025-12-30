@@ -347,16 +347,32 @@ const DashboardViewPage: React.FC = () => {
   });
 
   const renderChart = (chart: any, chartData: any) => {
+    // Debug log removed
+    
+    const cfg = chart.config || {};
+    const chartTitle = typeof cfg.chartTitle === 'string' && cfg.chartTitle.trim() ? cfg.chartTitle : null;
+    
+    // Helper to wrap chart with title
+    const withTitle = (content: React.ReactNode) => {
+      if (!chartTitle) return content;
+      return (
+        <>
+          <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
+            {chartTitle}
+          </div>
+          {content}
+        </>
+      );
+    };
+    
     // Table charts are paginated/infinite-scroll; do not rely on the dashboard-wide prefetch.
     if (chart.chart_type === 'table') {
-      const cfg = (chart.config || {}) as Record<string, any>;
-      return <SavedTableChart dashboardId={id!} chartId={chart.id} cfg={cfg} />;
+      return withTitle(<SavedTableChart dashboardId={id!} chartId={chart.id} cfg={cfg} />);
     }
 
     // Progressive scroll-based loading for bar/line/area (horizontal scroll for vertical orientation,
     // vertical scroll for horizontal orientation)
     if (chart.chart_type === 'bar' || chart.chart_type === 'line' || chart.chart_type === 'area') {
-      const cfg = chart.config || {};
       const orientation = (cfg.barOrientation || cfg.orientation || 'vertical') as 'vertical' | 'horizontal';
       return (
         <ProgressiveXYChart
@@ -384,23 +400,8 @@ const DashboardViewPage: React.FC = () => {
 
     const colors = ['#4f46e5', '#0ea5e9', '#22c55e', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
     const data = chartData.data || [];
-    const cfg = (chart.config || {}) as Record<string, any>;
     
-    // Check if data is already aggregated (has name, value, count fields)
-    const isAggregated = data.length > 0 && 
-      'name' in data[0] && 
-      'value' in data[0] && 
-      'count' in data[0];
-    
-    // Debug logging
-    console.log('Chart config:', { 
-      type: chart.chart_type, 
-      x_column: chart.x_column, 
-      y_column: chart.y_column,
-      title: chart.title,
-      config: chart.config 
-    });
-    console.log('Is data already aggregated?', isAggregated);
+    // Debug logs removed
     
     // Pie / Donut
     if (chart.chart_type === 'pie' || chart.chart_type === 'donut') {
@@ -499,7 +500,7 @@ const DashboardViewPage: React.FC = () => {
         return '';
       };
 
-      return (
+      return withTitle(
         <ResponsiveContainer width="100%" height={450}>
           <PieChart>
             <Tooltip />
@@ -585,7 +586,7 @@ const DashboardViewPage: React.FC = () => {
         return Array.from(groups.entries()).map(([k, d], idx) => ({ key: k, label: k, data: d, color: palette[idx % palette.length] }));
       })();
 
-      return (
+      return withTitle(
         <ScatterPlot
           data={[]}
           series={series}
@@ -625,7 +626,7 @@ const DashboardViewPage: React.FC = () => {
       const radarGroupOther = typeof cfg.radarGroupOther === 'boolean' ? cfg.radarGroupOther : false;
       const rawFill = toNumber(cfg.radarFillOpacity);
       const radarFillOpacity = rawFill !== null ? rawFill : 0.15;
-      console.log('[INSIGHT RADAR CONFIG] radarFillOpacity from config:', cfg.radarFillOpacity, '| final value:', radarFillOpacity);
+      // Debug log removed
       const showLegend = typeof cfg.showLegend === 'boolean' ? cfg.showLegend : true;
 
       const showGrid = typeof cfg.showGrid === 'boolean' ? cfg.showGrid : true;
@@ -703,21 +704,17 @@ const DashboardViewPage: React.FC = () => {
           const hasSeries = Boolean(radarSeriesBy);
           const seriesSet = new Set<string>();
 
-          console.log('[INSIGHT RADAR] Raw data sample before processing:', data.slice(0, 2));
-          console.log('[INSIGHT RADAR] radarSeriesBy column:', radarSeriesBy);
+          // Debug logs removed
 
           for (const r of data as any[]) {
             const category = String(r?.[xColResolved] ?? '').trim();
             if (!category) continue;
             let seriesKey = hasSeries ? (String(r?.[radarSeriesBy] ?? '').trim() || 'Unknown') : (yColResolved || 'Value');
-            const originalKey = seriesKey;
             // Truncate ISO timestamps at position 19 to remove timezone (match SQL modal behavior)
             if (seriesKey.length > 19 && seriesKey[10] === 'T') {
               seriesKey = seriesKey.substring(0, 19);
             }
-            if (originalKey !== seriesKey) {
-              console.log(`[INSIGHT RADAR] Truncated "${originalKey}" -> "${seriesKey}"`);
-            }
+            // Debug log removed
             seriesSet.add(seriesKey);
             const s = ensure(category, seriesKey);
             if (radarAggregation === 'count') {
@@ -775,8 +772,7 @@ const DashboardViewPage: React.FC = () => {
             return row;
           });
 
-          console.log('[INSIGHT RADAR FINAL] seriesKeys:', seriesKeys);
-          console.log('[INSIGHT RADAR FINAL] First 2 data rows:', JSON.stringify(rowsOut.slice(0, 2), null, 2));
+          // Debug logs removed
 
           if (radarGroupOther && rest.length > 0) {
             const other: Record<string, any> = { category: 'Other' };
@@ -914,9 +910,9 @@ const DashboardViewPage: React.FC = () => {
         return { axisKey: 'metric' as const, data: rowsOut, seriesKeys: keptSeries, normalized, hasNegative: normalized && hasNegative };
       })();
 
-      console.log('[RADAR DEBUG] prepared:', prepared);
+      // Debug log removed
 
-      return (
+      return withTitle(
         <ResponsiveContainer width="100%" height={500}>
           <RadarChart 
             data={prepared.data} 
@@ -1038,7 +1034,7 @@ const DashboardViewPage: React.FC = () => {
       const denom = first > 0 ? first : 0;
       const rendered = withPercent ? funnelData.map((d) => ({ ...d, percent: denom ? d.value / denom : undefined })) : funnelData;
 
-      return (
+      return withTitle(
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: 560, maxWidth: '100%' }}>
             <FunnelChartComponent data={rendered} nameKey="name" dataKey="value" colors={colors} height={320} />
@@ -1100,7 +1096,7 @@ const DashboardViewPage: React.FC = () => {
           ? `${prefix}${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${suffix}`
           : '—';
 
-        return (
+        return withTitle(
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, marginBottom: '8px' }}>{yCol}</div>
             <div style={{ fontSize: '72px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>{formatted}</div>
@@ -1164,7 +1160,7 @@ const DashboardViewPage: React.FC = () => {
         ? Math.max(1, safeMin + 1, dataMax, gaugeValue)
         : Math.max(1, maxValueCfg);
 
-      return (
+      return withTitle(
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: 520, maxWidth: '100%' }}>
             <GaugeChart
@@ -1214,8 +1210,7 @@ const DashboardViewPage: React.FC = () => {
         value: Number(row[chart.y_column]) || 0
       }));
     
-    console.log('Final processed data length:', processedData.length);
-    console.log('Sample data:', processedData.slice(0, 3));
+    // Debug logs removed
     
     // If no data after processing, show empty state
     if (processedData.length === 0) {
@@ -1977,6 +1972,14 @@ const DashboardViewPage: React.FC = () => {
                       const showLegend = typeof cfg.showLegend === 'boolean' ? cfg.showLegend : true;
                       const showDataLabels = typeof cfg.showDataLabels === 'boolean' ? cfg.showDataLabels : false;
 
+                      // Extract axis arrays from config
+                      const xAxes: string[] = Array.isArray(cfg.xAxes)
+                        ? cfg.xAxes.filter((c: any) => typeof c === 'string' && c.trim())
+                        : [];
+                      const yAxes: string[] = Array.isArray(cfg.yAxes)
+                        ? cfg.yAxes.filter((c: any) => typeof c === 'string' && c.trim())
+                        : [];
+
                       const xySeriesBy = typeof cfg.seriesBy === 'string' ? cfg.seriesBy : '';
                       const xyAggregation = typeof cfg.aggregation === 'string' ? cfg.aggregation : 'none';
                       const xySortOrder = typeof cfg.sortOrder === 'string' ? cfg.sortOrder : 'none';
@@ -2169,18 +2172,22 @@ const DashboardViewPage: React.FC = () => {
                               ) : null}
 
                               {/* X-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && sqlInsight.chart.x_column && (
+                              {sqlInsight.chart.chart_type !== 'table' && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>X-Axis</div>
-                                  <div style={{ fontSize: '14px', color: '#0f172a' }}>{sqlInsight.chart.x_column}</div>
+                                  <div style={{ fontSize: '14px', color: '#0f172a' }}>
+                                    {xAxes.length > 0 ? xAxes.join(', ') : sqlInsight.chart.x_column}
+                                  </div>
                                 </div>
                               )}
 
                               {/* Y-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && sqlInsight.chart.y_column && !(isRadar && radarYAxes.length > 0) && (
+                              {sqlInsight.chart.chart_type !== 'table' && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Y-Axis</div>
-                                  <div style={{ fontSize: '14px', color: '#0f172a' }}>{sqlInsight.chart.y_column}</div>
+                                  <div style={{ fontSize: '14px', color: '#0f172a' }}>
+                                    {yAxes.length > 0 ? yAxes.join(', ') : sqlInsight.chart.y_column}
+                                  </div>
                                 </div>
                               )}
 
@@ -2646,7 +2653,8 @@ const DashboardViewPage: React.FC = () => {
                     {/* Chart Content */}
                     <div style={{ padding: '20px' }}>
                       {/* Inner Title (from config) */}
-                      {chart.config?.chartTitle && chart.config.chartTitle !== chart.title && (
+                      {/* Debug log removed */}
+                      {chart.config?.chartTitle && (
                         <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', marginBottom: '10px' }}>
                           {chart.config.chartTitle}
                         </div>
