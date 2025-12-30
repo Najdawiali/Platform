@@ -17,9 +17,10 @@ import {
 interface LibraryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSelect?: (insight: any) => void;
 }
 
-export const LibraryModal: React.FC<LibraryModalProps> = ({ isOpen, onClose }) => {
+export const LibraryModal: React.FC<LibraryModalProps> = ({ isOpen, onClose, onSelect }) => {
   const { data: allDashboards = [], isLoading } = useQuery({
     queryKey: ['dashboards'],
     queryFn: dashboardService.getDashboards,
@@ -128,6 +129,12 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({ isOpen, onClose }) =
               {insights.map((insight) => (
                 <div 
                   key={insight.id}
+                  onClick={() => {
+                    if (onSelect) {
+                      onSelect(insight);
+                      onClose();
+                    }
+                  }}
                   style={{
                     backgroundColor: 'white',
                     borderRadius: '16px',

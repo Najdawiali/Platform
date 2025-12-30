@@ -28,6 +28,7 @@ export const InsightsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [orderBy, setOrderBy] = useState<'date' | 'name'>('date');
+  const [searchQuery, setSearchQuery] = useState('');
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   const { data: dashboards = [] } = useQuery<DashboardListItem[]>({
@@ -80,7 +81,13 @@ export const InsightsPage: React.FC = () => {
 
     const nameValue = (d: DashboardListItem): string => (d.name || '').toLowerCase();
 
-    const copy = [...dashboards];
+    let copy = [...dashboards];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      copy = copy.filter((d) => (d.name || '').toLowerCase().includes(q));
+    }
+
     copy.sort((a, b) => {
       if (orderBy === 'name') {
         const cmp = nameValue(a).localeCompare(nameValue(b));
@@ -94,9 +101,9 @@ export const InsightsPage: React.FC = () => {
       return nameValue(a).localeCompare(nameValue(b));
     });
     return copy;
-  }, [dashboards, orderBy]);
+  }, [dashboards, orderBy, searchQuery]);
 
-  const count = dashboards.length;
+  const count = sortedDashboards.length;
 
   return (
     <div style={{ flex: 1, overflow: 'auto', backgroundColor: '#f8fafc' }}>
@@ -144,6 +151,8 @@ export const InsightsPage: React.FC = () => {
               <span style={{ color: '#94a3b8', fontSize: '14px' }}>🔎</span>
               <input
                 placeholder="Search insights..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
                   border: 'none',
                   outline: 'none',
@@ -154,63 +163,6 @@ export const InsightsPage: React.FC = () => {
                 }}
               />
             </div>
-          </div>
-
-          <button
-            type="button"
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '12px',
-              border: '1px solid #e2e8f0',
-              backgroundColor: 'white',
-              cursor: 'pointer',
-              color: '#64748b',
-              fontSize: '14px',
-            }}
-            aria-label="Filter"
-          >
-            ⏷
-          </button>
-
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            backgroundColor: 'white',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            overflow: 'hidden',
-          }}>
-            <button
-              type="button"
-              style={{
-                width: '40px',
-                height: '40px',
-                border: 'none',
-                backgroundColor: '#10b981',
-                color: 'white',
-                cursor: 'pointer',
-                fontWeight: 900,
-              }}
-              aria-label="Grid view"
-            >
-              ▦
-            </button>
-            <button
-              type="button"
-              style={{
-                width: '40px',
-                height: '40px',
-                border: 'none',
-                backgroundColor: 'white',
-                color: '#64748b',
-                cursor: 'pointer',
-                fontWeight: 900,
-              }}
-              aria-label="List view"
-            >
-              ≡
-            </button>
           </div>
 
           <div style={{
