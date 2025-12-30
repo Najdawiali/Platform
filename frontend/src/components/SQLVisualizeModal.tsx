@@ -71,6 +71,7 @@ export interface SQLVisualizeModalProps {
   rows: Array<Record<string, any>>;
   query?: string;
   sources?: any[];
+  initialConfig?: Record<string, any>; // Added to support restoring state
   onConfigChange?: (config: {
     chartType: ChartType;
     title: string;
@@ -561,7 +562,7 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
   },
 };
 
-export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config' }) => {
+export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
   const navigate = useNavigate();
   const numericColumns = useMemo(() => inferNumericColumns(columns, rows), [columns, rows]);
   const nonNumericColumns = useMemo(() => inferCategoricalColumns(columns, numericColumns), [columns, numericColumns]);
@@ -687,6 +688,131 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const [showDataLabels, setShowDataLabels] = useState<boolean>(false);
   const [barCornerRadius, setBarCornerRadius] = useState<number>(6);
 
+  // Color options
+  const [colorScheme, setColorScheme] = useState<'default' | 'custom' | 'specific'>('default');
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  const [colorMapping, setColorMapping] = useState<Record<string, string>>({});
+
+  // Restore state from initialConfig
+  useEffect(() => {
+    if (initialConfig && isOpen) {
+      // Restore Insight Name & Description if provided (for editing)
+      // Note: We do NOT sync chartTitle to saveName here. They should be distinct.
+      if (initialConfig.insightName) {
+        setSaveName(initialConfig.insightName);
+      }
+      if (initialConfig.insightDescription) {
+        setSaveDescription(initialConfig.insightDescription);
+      }
+
+      if (initialConfig.chartType) setChartType(initialConfig.chartType as ChartType);
+      if (initialConfig.chartTitle) setChartTitle(initialConfig.chartTitle);
+      
+      // Axes
+      if (Array.isArray(initialConfig.xAxes) && initialConfig.xAxes.length > 0) {
+        setXAxes(initialConfig.xAxes);
+      } else if (initialConfig.xAxis) {
+        setXAxes([initialConfig.xAxis]);
+      }
+      
+      if (Array.isArray(initialConfig.yAxes) && initialConfig.yAxes.length > 0) {
+        setYAxes(initialConfig.yAxes);
+      } else if (initialConfig.yAxis) {
+        setYAxes([initialConfig.yAxis]);
+      }
+
+      if (initialConfig.xTimeGrain) setXTimeGrain(initialConfig.xTimeGrain);
+
+      // Global
+      if (typeof initialConfig.showGrid === 'boolean') setShowGrid(initialConfig.showGrid);
+      if (typeof initialConfig.showLegend === 'boolean') setShowLegend(initialConfig.showLegend);
+      if (typeof initialConfig.showDataLabels === 'boolean') setShowDataLabels(initialConfig.showDataLabels);
+      if (typeof initialConfig.barCornerRadius === 'number') setBarCornerRadius(initialConfig.barCornerRadius);
+
+      // Colors
+      if (initialConfig.colorScheme) setColorScheme(initialConfig.colorScheme);
+      if (Array.isArray(initialConfig.customColors)) setCustomColors(initialConfig.customColors);
+      if (initialConfig.colorMapping) setColorMapping(initialConfig.colorMapping);
+
+      // Bar/Line/Area
+      if (initialConfig.seriesBy) setSeriesBy(initialConfig.seriesBy);
+      if (initialConfig.aggregation) setAggregation(initialConfig.aggregation);
+      if (initialConfig.sortOrder) setSortOrder(initialConfig.sortOrder);
+      if (initialConfig.barOrientation) setBarOrientation(initialConfig.barOrientation);
+      if (typeof initialConfig.isStacked === 'boolean') setIsStacked(initialConfig.isStacked);
+      if (initialConfig.curveType) setCurveType(initialConfig.curveType);
+      if (typeof initialConfig.showMarkers === 'boolean') setShowMarkers(initialConfig.showMarkers);
+      if (typeof initialConfig.areaFillOpacity === 'number') setAreaFillOpacity(initialConfig.areaFillOpacity);
+
+      // Pie/Donut
+      if (initialConfig.pieAggregation) setPieAggregation(initialConfig.pieAggregation);
+      if (initialConfig.pieSortOrder) setPieSortOrder(initialConfig.pieSortOrder);
+      if (initialConfig.pieLabelMode) setPieLabelMode(initialConfig.pieLabelMode);
+      if (typeof initialConfig.pieTopN === 'number') setPieTopN(initialConfig.pieTopN);
+      if (typeof initialConfig.pieGroupOther === 'boolean') setPieGroupOther(initialConfig.pieGroupOther);
+      if (typeof initialConfig.donutInnerRadius === 'number') setDonutInnerRadius(initialConfig.donutInnerRadius);
+
+      // Radar
+      if (initialConfig.radarAggregation) setRadarAggregation(initialConfig.radarAggregation);
+      if (initialConfig.radarSortOrder) setRadarSortOrder(initialConfig.radarSortOrder);
+      if (typeof initialConfig.radarTopN === 'number') setRadarTopN(initialConfig.radarTopN);
+      if (typeof initialConfig.radarGroupOther === 'boolean') setRadarGroupOther(initialConfig.radarGroupOther);
+      if (typeof initialConfig.radarFillOpacity === 'number') setRadarFillOpacity(initialConfig.radarFillOpacity);
+      if (initialConfig.radarAxisMode) setRadarAxisMode(initialConfig.radarAxisMode);
+      if (initialConfig.radarSeriesBy) setRadarSeriesBy(initialConfig.radarSeriesBy);
+      if (typeof initialConfig.radarNormalizeMetrics === 'boolean') setRadarNormalizeMetrics(initialConfig.radarNormalizeMetrics);
+      if (typeof initialConfig.radarUsePerMetricAggregation === 'boolean') setRadarUsePerMetricAggregation(initialConfig.radarUsePerMetricAggregation);
+      if (initialConfig.radarMetricAggregations) setRadarMetricAggregations(initialConfig.radarMetricAggregations);
+
+      // Funnel
+      if (initialConfig.funnelAggregation) setFunnelAggregation(initialConfig.funnelAggregation);
+      if (initialConfig.funnelSortOrder) setFunnelSortOrder(initialConfig.funnelSortOrder);
+      if (typeof initialConfig.funnelTopN === 'number') setFunnelTopN(initialConfig.funnelTopN);
+      if (typeof initialConfig.funnelGroupOther === 'boolean') setFunnelGroupOther(initialConfig.funnelGroupOther);
+      if (typeof initialConfig.funnelShowPercentOfFirst === 'boolean') setFunnelShowPercentOfFirst(initialConfig.funnelShowPercentOfFirst);
+
+      // KPI
+      if (initialConfig.kpiAggregation) setKpiAggregation(initialConfig.kpiAggregation);
+      if (typeof initialConfig.kpiDecimals === 'number') setKpiDecimals(initialConfig.kpiDecimals);
+      if (initialConfig.kpiPrefix) setKpiPrefix(initialConfig.kpiPrefix);
+      if (initialConfig.kpiSuffix) setKpiSuffix(initialConfig.kpiSuffix);
+
+      // Gauge
+      if (initialConfig.gaugeAggregation) setGaugeAggregation(initialConfig.gaugeAggregation);
+      if (initialConfig.gaugeSortByColumn) setGaugeSortByColumn(initialConfig.gaugeSortByColumn);
+      if (typeof initialConfig.gaugeMinValue === 'number') setGaugeMinValue(initialConfig.gaugeMinValue);
+      if (typeof initialConfig.gaugeUseAutoMax === 'boolean') setGaugeUseAutoMax(initialConfig.gaugeUseAutoMax);
+      if (typeof initialConfig.gaugeMaxValue === 'number') setGaugeMaxValue(initialConfig.gaugeMaxValue);
+      if (typeof initialConfig.gaugeDecimals === 'number') setGaugeDecimals(initialConfig.gaugeDecimals);
+      if (initialConfig.gaugePrefix) setGaugePrefix(initialConfig.gaugePrefix);
+      if (initialConfig.gaugeSuffix) setGaugeSuffix(initialConfig.gaugeSuffix);
+      if (initialConfig.gaugeUnit) setGaugeUnit(initialConfig.gaugeUnit);
+      if (typeof initialConfig.gaugeThresholdLow === 'number') setGaugeThresholdLow(initialConfig.gaugeThresholdLow);
+      if (typeof initialConfig.gaugeThresholdMedium === 'number') setGaugeThresholdMedium(initialConfig.gaugeThresholdMedium);
+      if (typeof initialConfig.gaugeShowLegend === 'boolean') setGaugeShowLegend(initialConfig.gaugeShowLegend);
+      if (typeof initialConfig.gaugeShowPercent === 'boolean') setGaugeShowPercent(initialConfig.gaugeShowPercent);
+      if (typeof initialConfig.gaugeShowValue === 'boolean') setGaugeShowValue(initialConfig.gaugeShowValue);
+
+      // Table
+      if (typeof initialConfig.tableRowLimit === 'number') setTableRowLimit(initialConfig.tableRowLimit);
+      if (typeof initialConfig.tableFullData === 'boolean') setTableFullData(initialConfig.tableFullData);
+      if (typeof initialConfig.tableWrap === 'boolean') setTableWrap(initialConfig.tableWrap);
+      if (typeof initialConfig.tableDense === 'boolean') setTableDense(initialConfig.tableDense);
+      if (initialConfig.tableSortColumn) setTableSortColumn(initialConfig.tableSortColumn);
+      if (initialConfig.tableSortDir) setTableSortDir(initialConfig.tableSortDir);
+      if (Array.isArray(initialConfig.tableVisibleColumns)) setTableVisibleColumns(initialConfig.tableVisibleColumns);
+      if (typeof initialConfig.tableEnableAggregation === 'boolean') setTableEnableAggregation(initialConfig.tableEnableAggregation);
+      if (Array.isArray(initialConfig.tableGroupByColumns)) setTableGroupByColumns(initialConfig.tableGroupByColumns);
+      if (Array.isArray(initialConfig.tableMetrics)) setTableMetrics(initialConfig.tableMetrics);
+
+      // Scatter
+      if (initialConfig.scatterColorBy) setScatterColorBy(initialConfig.scatterColorBy);
+      if (initialConfig.scatterSizeBy) setScatterSizeBy(initialConfig.scatterSizeBy);
+      if (typeof initialConfig.scatterPointOpacity === 'number') setScatterPointOpacity(initialConfig.scatterPointOpacity);
+      if (typeof initialConfig.scatterMaxPointSize === 'number') setScatterMaxPointSize(initialConfig.scatterMaxPointSize);
+    }
+  }, [initialConfig, isOpen]);
+
     const exportConfig = useCallback(() => {
       const primaryXAxis = xAxes[0] ?? '';
       const primaryYAxis = yAxes[0] ?? '';
@@ -699,6 +825,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       };
 
       const cfg: Record<string, any> = {
+        mode, // Save the visualization mode (config vs sql_direct)
         chartType,
         chartTitle,
         xAxis: primaryXAxis,
@@ -712,6 +839,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         showLegend,
         showDataLabels,
         barCornerRadius,
+
+        // Colors
+        colorScheme,
+        customColors,
+        colorMapping,
 
         // Scatter options
         scatterColorBy,
@@ -865,38 +997,49 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   useEffect(() => {
     if (!isOpen) return;
 
+    // PARANOID: Ensure saveName is cleared if we are not in edit mode (no initialConfig)
+    // This prevents any stale state or confusion.
+    if (!initialConfig) {
+      setSaveName('');
+      setSaveDescription('');
+    }
+
     const firstCol = columns[0] || '';
     const firstNumeric = numericColumns[0] || '';
 
     setChartTitle((prev) => (prev ? prev : ''));
 
-    if (mode === 'sql_direct') {
-      // Direct Mode: Heuristic auto-mapping
-      const firstDim = nonNumericColumns[0] || firstCol;
-      setXAxes([firstDim]);
+    // Only apply defaults if we are NOT restoring a saved configuration.
+    // If initialConfig is present, the restoration effect handles state setup.
+    if (!initialConfig) {
+      if (mode === 'sql_direct') {
+        // Direct Mode: Heuristic auto-mapping
+        const firstDim = nonNumericColumns[0] || firstCol;
+        setXAxes([firstDim]);
 
-      // Default to all numeric columns for Y-axis to show multi-series immediately
-      if (numericColumns.length > 0) {
-        setYAxes(numericColumns);
+        // Default to all numeric columns for Y-axis to show multi-series immediately
+        if (numericColumns.length > 0) {
+          setYAxes(numericColumns);
+        } else {
+          setYAxes([firstCol]);
+        }
+
+        // Force "No Aggregation" settings
+        setAggregation('none');
+        setSortOrder('none');
+        setXTimeGrain('none');
       } else {
-        setYAxes([firstCol]);
+        // Config Mode: Standard defaults (preserve selection if valid)
+        setXAxes((prev) => {
+          const next = prev.filter((c) => columns.includes(c));
+          return next.length > 0 ? next : (firstCol ? [firstCol] : []);
+        });
+        setYAxes((prev) => {
+          const next = prev.filter((c) => columns.includes(c));
+          const fallback = firstNumeric || firstCol;
+          return next.length > 0 ? next : (fallback ? [fallback] : []);
+        });
       }
-
-      // Force "No Aggregation" settings
-      setAggregation('none');
-      setSortOrder('none');
-      setXTimeGrain('none');
-    } else {
-      // Config Mode: Standard defaults (preserve selection if valid)
-      setXAxes((prev) => {
-        const next = prev.filter((c) => columns.includes(c));
-        return next.length > 0 ? next : (firstCol ? [firstCol] : []);
-      });
-      setYAxes((prev) => {
-        const next = prev.filter((c) => columns.includes(c));
-        const fallback = firstNumeric || firstCol;
-        return next.length > 0 ? next : (fallback ? [fallback] : []);
-      });
     }
 
     // Keep seriesBy valid
@@ -926,7 +1069,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         .map((m) => ({ ...m, column: m.column === '*' ? '*' : (columns.includes(m.column) ? m.column : '') }))
         .filter((m) => m.column === '*' || (m.column && columns.includes(m.column)))
     );
-  }, [isOpen, columns, numericColumns]);
+  }, [isOpen, columns, numericColumns, initialConfig, mode, nonNumericColumns]);
 
   const safeTableAlias = useCallback((agg: TableMetricAgg, col: string) => {
     const base = `${agg}_${col === '*' ? 'rows' : col}`;
@@ -1174,6 +1317,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     if (!isOpen) return;
     onConfigChange?.(exportConfig());
   }, [exportConfig, isOpen, onConfigChange]);
+
+  const effectiveColors = useMemo(() => {
+    if (colorScheme === 'custom' && customColors.length > 0) {
+      return customColors;
+    }
+    return COLORS;
+  }, [colorScheme, customColors]);
 
   const chartData = useMemo(() => {
     // Normalize into objects with selected keys for charts.
@@ -1856,6 +2006,21 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     return Array.from(groups.entries()).map(([k, data], idx) => ({ key: k, label: k, data, color: COLORS[idx % COLORS.length] }));
   }, [chartType, chartData, xAxis, yAxis, scatterColorBy]);
 
+  const availableSeriesKeys = useMemo(() => {
+    if (isXYChart) return xySeriesKeys;
+    if (chartType === 'pie' || chartType === 'donut') return pieData.map((d) => d.name);
+    if (chartType === 'radar') return radarPrepared.seriesKeys;
+    if (chartType === 'funnel') return funnelData.map((d) => d.name);
+    return [];
+  }, [isXYChart, chartType, xySeriesKeys, pieData, radarPrepared, funnelData]);
+
+  const getColor = useCallback((key: string, index: number) => {
+    if (colorScheme === 'specific') {
+      return colorMapping[key] || COLORS[index % COLORS.length];
+    }
+    return effectiveColors[index % effectiveColors.length];
+  }, [colorScheme, colorMapping, effectiveColors]);
+
   const renderChart = () => {
     if (!hasResults) {
       return (
@@ -1996,11 +2161,12 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
 
     if (chartType === 'funnel') {
       const data = funnelData;
+      const currentColors = data.map((d, i) => getColor(d.name, i));
 
       return (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: 560, maxWidth: '100%' }}>
-            <FunnelChart data={data} nameKey="name" dataKey="value" colors={COLORS} height={320} />
+            <FunnelChart data={data} nameKey="name" dataKey="value" colors={currentColors} height={320} />
             {funnelShowPercentOfFirst && data.length > 0 ? (
               <div style={{ marginTop: '10px', fontSize: '11px', color: '#64748b' }}>
                 Showing percent of first stage.
@@ -2039,8 +2205,8 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
               label={showDataLabels && pieLabelMode !== 'none' ? labelFn : false}
               labelLine={showDataLabels && pieLabelMode !== 'none'}
             >
-              {pieData.map((_, idx) => (
-                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+              {pieData.map((entry, idx) => (
+                <Cell key={idx} fill={getColor(entry.name, idx)} />
               ))}
             </Pie>
             {chartType === 'donut' ? (
@@ -2094,8 +2260,8 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                 key={k}
                 name={k}
                 dataKey={k}
-                stroke={COLORS[i % COLORS.length]}
-                fill={COLORS[i % COLORS.length]}
+                stroke={getColor(k, i)}
+                fill={getColor(k, i)}
                 fillOpacity={radarFillOpacity}
                 strokeWidth={2}
               />
@@ -2115,7 +2281,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
             {commonTooltip}
             {commonLegend}
             {xySeriesKeys.map((k, i) => (
-              <Line key={k} type={curveType} dataKey={k} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={showMarkers}>
+              <Line key={k} type={curveType} dataKey={k} stroke={getColor(k, i)} strokeWidth={2} dot={showMarkers}>
                 {showDataLabels ? <LabelList dataKey={k} position="top" /> : null}
               </Line>
             ))}
@@ -2138,8 +2304,8 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                 key={k}
                 type={curveType}
                 dataKey={k}
-                stroke={COLORS[i % COLORS.length]}
-                fill={COLORS[i % COLORS.length]}
+                stroke={getColor(k, i)}
+                fill={getColor(k, i)}
                 fillOpacity={areaFillOpacity}
                 dot={showMarkers}
                 stackId={seriesBy && isStacked ? 'stack' : undefined}
@@ -2174,7 +2340,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
             <Bar
               key={k}
               dataKey={k}
-              fill={COLORS[i % COLORS.length]}
+              fill={getColor(k, i)}
               stackId={seriesBy && isStacked ? 'stack' : undefined}
               radius={barOrientation === 'horizontal' ? [0, barCornerRadius, barCornerRadius, 0] : [barCornerRadius, barCornerRadius, 0, 0]}
             >
@@ -2217,6 +2383,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const isKpi = chartType === 'kpi';
   const isGauge = chartType === 'gauge';
   const isTable = chartType === 'table';
+  const showColorSettings = isXYChart || isPie || isRadar || isFunnel;
 
   if (!isOpen) return null;
 
@@ -2297,8 +2464,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
             <button
               onClick={() => {
                 setSaveError(null);
-                setSaveName('');
-                setSaveDescription('');
+                // Explicitly set the save name. If editing (initialConfig present), use the existing name.
+                // If creating new, ensure it starts empty (do NOT use chartTitle).
+                const nameToUse = initialConfig?.insightName || '';
+                setSaveName(nameToUse);
+                setSaveDescription(initialConfig?.insightDescription || '');
                 setIsSaveModalOpen(true);
               }}
               style={{
@@ -2632,6 +2802,151 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                 )}
               </div>
             )}
+
+            {showColorSettings ? (
+              <div style={{ marginBottom: '14px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>APPEARANCE</div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Color Scheme</div>
+                <select
+                  value={colorScheme}
+                  onChange={(e) => setColorScheme(e.target.value as 'default' | 'custom' | 'specific')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <option value="default">Default (Indigo/Slate)</option>
+                  <option value="custom">Custom Palette</option>
+                  <option value="specific">Specific Mapping</option>
+                </select>
+
+                {colorScheme === 'specific' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {availableSeriesKeys.length === 0 ? (
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>No series detected to map.</div>
+                    ) : (
+                      availableSeriesKeys.map((key, idx) => (
+                        <div key={key} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="color"
+                            value={colorMapping[key] || COLORS[idx % COLORS.length]}
+                            onChange={(e) => {
+                              setColorMapping((prev) => ({ ...prev, [key]: e.target.value }));
+                            }}
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              padding: '0',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              backgroundColor: 'transparent',
+                            }}
+                          />
+                          <div style={{ fontSize: '12px', color: '#0f172a', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {key}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {colorScheme === 'custom' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {customColors.map((color, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => {
+                            const next = [...customColors];
+                            next[idx] = e.target.value;
+                            setCustomColors(next);
+                          }}
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            padding: '0',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            backgroundColor: 'transparent',
+                          }}
+                        />
+                        <input
+                          type="text"
+                          value={color}
+                          onChange={(e) => {
+                            const next = [...customColors];
+                            next[idx] = e.target.value;
+                            setCustomColors(next);
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '12px',
+                            color: '#0f172a',
+                            outline: 'none',
+                          }}
+                        />
+                        {customColors.length > 1 && (
+                          <button
+                            onClick={() => {
+                              const next = customColors.filter((_, i) => i !== idx);
+                              setCustomColors(next);
+                            }}
+                            style={{
+                              padding: '8px',
+                              borderRadius: '8px',
+                              border: '1px solid #e2e8f0',
+                              backgroundColor: 'white',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            title="Remove color"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setCustomColors([...customColors, '#000000'])}
+                      style={{
+                        marginTop: '4px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px dashed #cbd5e1',
+                        backgroundColor: '#f8fafc',
+                        color: '#64748b',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        width: '100%',
+                      }}
+                    >
+                      + Add Color
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {isKpi ? (
               <>
@@ -3742,26 +4057,6 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
               </div>
             )}
 
-            <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>COLOR SCHEME</div>
-            <select
-              value="Default"
-              disabled
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '10px',
-                border: '1px solid #e2e8f0',
-                fontSize: '12px',
-                fontWeight: 700,
-                color: '#0f172a',
-                backgroundColor: '#f8fafc',
-                cursor: 'not-allowed',
-                marginBottom: '14px',
-              }}
-            >
-              <option value="Default">Default</option>
-            </select>
-
             <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>DISPLAY OPTIONS</div>
             {canShowGrid ? (
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#0f172a', marginBottom: '10px' }}>
@@ -4069,6 +4364,9 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                     setSaveError(null);
                     try {
                       console.log('Step 1: Saving query to library...');
+                      console.log('Saving with Name:', name);
+                      console.log('Saving with Chart Title:', chartTitle);
+                      
                       // 1) Save to Query Library (REQUIRED)
                       await savedQueryService.createSavedQuery({
                         name,
@@ -4101,7 +4399,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                           chart_type: chartType,
                           x_column: xColumn || undefined,
                           y_column: yColumn || undefined,
-                          title: chartTitle?.trim() ? chartTitle.trim() : name,
+                          title: name, // Explicitly use the Save Name for the dashboard item title
                           config: chartCfg,
                         },
                       });

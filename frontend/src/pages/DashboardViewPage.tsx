@@ -1795,42 +1795,67 @@ const DashboardViewPage: React.FC = () => {
             </button>
 
             {/* Title and metadata */}
-            <div style={{ marginTop: '12px' }}>
-              <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '10px' }}>
-                {sqlInsight.dashboard.name}
-              </h1>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                {/* Data source badge */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  backgroundColor: '#f1f5f9',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  color: '#64748b',
-                }}>
-                  <span>📊</span>
-                  <span>SQL Insight</span>
-                </div>
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '10px' }}>
+                  {sqlInsight.dashboard.name}
+                </h1>
                 
-                {/* Updated time badge */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  backgroundColor: '#f1f5f9',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  color: '#64748b',
-                }}>
-                  <span>🕐</span>
-                  <span>Updated {formatTime(sqlInsight.dashboard.updated_at || sqlInsight.dashboard.created_at)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  {/* Data source badge */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 10px',
+                    backgroundColor: '#f1f5f9',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: '#64748b',
+                  }}>
+                    <span>📊</span>
+                    <span>SQL Insight</span>
+                  </div>
+                  
+                  {/* Updated time badge */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 10px',
+                    backgroundColor: '#f1f5f9',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: '#64748b',
+                  }}>
+                    <span>🕐</span>
+                    <span>Updated {formatTime(sqlInsight.dashboard.updated_at || sqlInsight.dashboard.created_at)}</span>
+                  </div>
                 </div>
               </div>
+
+              <button
+                onClick={() => navigate(`/insights/sql-editor?dashboardId=${sqlInsight.dashboard.id}&chartId=${sqlInsight.chart.id}`)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  color: '#475569',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+              >
+                ✏️ Edit
+              </button>
+            </div>
               
               {/* Description */}
               {sqlInsight.dashboard.description && (
@@ -1838,7 +1863,6 @@ const DashboardViewPage: React.FC = () => {
                   {sqlInsight.dashboard.description}
                 </p>
               )}
-            </div>
           </div>
         </div>
 
@@ -2621,6 +2645,13 @@ const DashboardViewPage: React.FC = () => {
                     
                     {/* Chart Content */}
                     <div style={{ padding: '20px' }}>
+                      {/* Inner Title (from config) */}
+                      {chart.config?.chartTitle && chart.config.chartTitle !== chart.title && (
+                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', marginBottom: '10px' }}>
+                          {chart.config.chartTitle}
+                        </div>
+                      )}
+
                       {chartQueries.isLoading ? (
                         <div style={{ padding: '64px', textAlign: 'center', color: '#64748b' }}>
                           <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>

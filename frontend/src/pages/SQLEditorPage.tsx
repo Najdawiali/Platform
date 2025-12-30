@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -8,12 +8,14 @@ import { Database as DatabaseIcon, Folder as FolderIcon, Search as SearchIcon, B
 import { connectionService } from '../services/connectionService';
 import { datasetService } from '../services/datasetService';
 import { queryService } from '../services/queryService';
+import { dashboardService } from '../services/dashboardService';
 import type { Connection, Dataset } from '../types';
 import { SQLVisualizeModal } from '../components/SQLVisualizeModal';
 import { savedQueryService, type SavedQueryListItem } from '../services/savedQueryService';
 
 export const SQLEditorPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [sqlQuery, setSqlQuery] = useState('');
   const [insightName, setInsightName] = useState('Untitled SQL Insight');
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,7 +129,7 @@ export const SQLEditorPage: React.FC = () => {
   });
 
   // Fetch database connections
-  const { data: allConnections = [] } = useQuery<Connection[]>({
+  const { data: allConnections = [], isLoading: isConnectionsLoading } = useQuery<Connection[]>({
     queryKey: ['connections'],
     queryFn: () => connectionService.getConnections(),
   });
@@ -137,7 +139,7 @@ export const SQLEditorPage: React.FC = () => {
   const connections = allConnections.filter((c) => isDatabaseSourceType((c as any)?.source_type));
 
   // Fetch file uploads (datasets) - use simplified list for performance
-  const { data: datasets = [] } = useQuery<Dataset[]>({
+  const { data: datasets = [], isLoading: isDatasetsLoading } = useQuery<Dataset[]>({
     queryKey: ['datasets'],
     queryFn: () => datasetService.getDatasets(),
   });
@@ -617,8 +619,9 @@ export const SQLEditorPage: React.FC = () => {
     }
   };
 
-  const handleRunQuery = async (options?: { page?: number; resetPage?: boolean }) => {
-    if (!sqlQuery.trim()) return;
+  const handleRunQuery = async (options?: { page?: number; resetPage?: boolean; queryOverride?: string }) => {
+    let queryToRun = options?.queryOverride || sqlQuery;
+    if (!queryToRun.trim()) return;
 
     const resetPage = options?.resetPage === true;
     const requestedPage = options?.page ?? currentPage;
@@ -635,9 +638,8 @@ export const SQLEditorPage: React.FC = () => {
 
     try {
       // Determine which query to run
-      let queryToRun = sqlQuery;
-      
-      if (editorRef.current) {
+      // If override is provided, use it directly. Otherwise check editor selection.
+      if (!options?.queryOverride && editorRef.current) {
         const editor = editorRef.current;
         const selection = editor.getSelection();
         const model = editor.getModel();
@@ -832,6 +834,71 @@ export const SQLEditorPage: React.FC = () => {
       setIsExecuting(false);
     }
   };
+
+  const [initialVisualizeConfig, setInitialVisualizeConfig] = useState<Record<string, any> | undefined>(undefined);
+  const lastLoadedChartId = useRef<string | null>(null);
+
+  // Handle loading saved insight for editing
+  useEffect(() => {
+    const editDashboardId = searchParams.get('dashboardId');
+    const editChartId = searchParams.get('chartId');
+
+    // Reset loaded state if we navigate away from edit mode
+    if (!editChartId) {
+      lastLoadedChartId.current = null;
+      return;
+    }
+
+    // Wait for dependencies to load so source resolution works
+    if (isConnectionsLoading || isDatasetsLoading) return;
+
+    // Prevent double-loading the same chart
+    if (lastLoadedChartId.current === editChartId) return;
+
+    if (editDashboardId && editChartId) {
+      const loadInsight = async () => {
+        try {
+          lastLoadedChartId.current = editChartId;
+          const dashboard = await dashboardService.getDashboard(editDashboardId);
+          const chart = dashboard.charts.find((c: any) => c.id === editChartId);
+          
+          if (chart && chart.config && chart.config.sql_query) {
+             const query = chart.config.sql_query;
+             setSqlQuery(query);
+             setInsightName(chart.title || dashboard.name);
+             
+             // Restore mode
+             if (chart.config.mode === 'sql_direct') {
+                setVisualizeMode('sql_direct');
+             } else {
+                setVisualizeMode('config');
+             }
+
+             // Set initial config for the modal to restore state
+             setInitialVisualizeConfig({
+               ...chart.config,
+               insightName: chart.title || dashboard.name,
+               insightDescription: chart.description
+             });
+
+             // Run the query and open modal
+             // We need to wait for the query to execute and state to update.
+             // handleRunQuery is async and waits for queryService.executeQuery.
+             await handleRunQuery({ queryOverride: query, resetPage: true });
+             
+             // Ensure the modal opens only after we have attempted to run the query.
+             // The modal will use the queryResult state which is set in handleRunQuery.
+             setIsVisualizeOpen(true);
+          }
+        } catch (err) {
+          console.error("Failed to load insight", err);
+          lastLoadedChartId.current = null; // Allow retry on failure?
+        }
+      };
+      loadInsight();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, isConnectionsLoading, isDatasetsLoading]);
 
   const handleLoadSavedQuery = async (id: string) => {
     try {
@@ -1889,7 +1956,10 @@ export const SQLEditorPage: React.FC = () => {
 
       <SQLVisualizeModal
         isOpen={isVisualizeOpen}
-        onClose={() => setIsVisualizeOpen(false)}
+        onClose={() => {
+          setIsVisualizeOpen(false);
+          setInitialVisualizeConfig(undefined);
+        }}
         page={queryResult?.page ?? currentPage ?? 1}
         totalPages={queryResult?.total_pages ?? 1}
         columns={queryResult?.columns ?? []}
@@ -1899,8 +1969,10 @@ export const SQLEditorPage: React.FC = () => {
         onConfigChange={handleVisualizeConfigChange}
         onSaveSuccess={() => {
           refetchSavedQueries();
+          setInitialVisualizeConfig(undefined);
         }}
         mode={visualizeMode}
+        initialConfig={initialVisualizeConfig}
       />
 
       {/* Clear History Confirmation */}
