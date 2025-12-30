@@ -169,7 +169,8 @@ class DashboardService:
             Dashboard.description,
             Dashboard.created_at,
             Dashboard.updated_at,
-            func.count(DashboardChart.id).label('chart_count')
+            func.count(DashboardChart.id).label('chart_count'),
+            func.max(DashboardChart.chart_type).label('first_chart_type')
         ).outerjoin(
             DashboardChart, Dashboard.id == DashboardChart.dashboard_id
         ).filter(
@@ -188,6 +189,7 @@ class DashboardService:
                 name=d.name,
                 description=d.description,
                 chart_count=d.chart_count,
+                first_chart_type=d.first_chart_type,
                 created_at=d.created_at,
                 updated_at=d.updated_at
             )

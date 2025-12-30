@@ -69,7 +69,7 @@ const DashboardsPage: React.FC = () => {
             </p>
           </div>
           <button
-            onClick={() => navigate('/visualize')}
+            onClick={() => navigate('/dashboards/new')}
             style={{
               padding: '12px 24px',
               backgroundColor: '#4f46e5',

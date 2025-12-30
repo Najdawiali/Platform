@@ -19,6 +19,7 @@ import { DatabaseDetailPage } from './pages/DatabaseDetailPage';
 import { FileUploadsPage } from './pages/FileUploadsPage';
 import { FileDetailPage } from './pages/FileDetailPage';
 import { CreateDatabasePage } from './pages/CreateDatabasePage';
+import { CreateDashboardPage } from './pages/CreateDashboardPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,6 +60,7 @@ function App() {
             <Route path="/visualize" element={<VisualizePage />} />
             <Route path="/model" element={<DataModelingPage />} />
             <Route path="/dashboards" element={<DashboardsPage />} />
+            <Route path="/dashboards/new" element={<CreateDashboardPage />} />
             <Route path="/dashboards/:id" element={<DashboardViewPage />} />
             <Route path="/showcase" element={<EnterpriseShowcase />} />
           </Route>

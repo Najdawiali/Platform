@@ -81,6 +81,7 @@ class DashboardListItem(BaseModel):
     name: str
     description: Optional[str] = None
     chart_count: int
+    first_chart_type: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

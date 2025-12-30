@@ -180,6 +180,7 @@ export interface DashboardListItem {
   name: string;
   description?: string;
   chart_count: number;
+  first_chart_type?: string;
   created_at: string;
   updated_at?: string;
 }
