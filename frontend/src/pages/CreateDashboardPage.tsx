@@ -13,19 +13,27 @@ interface CanvasItem {
   content: any;
   width?: string;
   height?: string;
+  marginLeft?: string;
+}
+
+interface DragItemInfo {
+  index: number;
+  parentId: string; // 'root' or section ID
 }
 
 interface DraggableInsightCardProps {
   item: CanvasItem;
   index: number;
-  onDragStart: (index: number) => void;
-  onDragEnter: (index: number) => void;
+  parentId: string;
+  onDragStart: (index: number, parentId: string) => void;
+  onDragEnter: (index: number, parentId: string) => void;
   onDragEnd: () => void;
-  onUpdate: (index: number, updates: Partial<CanvasItem>) => void;
-  onRemove: (index: number) => void;
+  onUpdate: (index: number, updates: Partial<CanvasItem>, parentId: string) => void;
+  onRemove: (index: number, parentId: string) => void;
+  containerWidth?: number;
 }
 
-const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
+const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index, parentId, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove, containerWidth }) => {
   const [isDraggable, setIsDraggable] = useState(false);
   const [showWidthMenu, setShowWidthMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -50,7 +58,7 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleResizeStart = (e: React.MouseEvent, direction: 'width' | 'height' | 'both') => {
+  const handleResizeStart = (e: React.MouseEvent, direction: 'width' | 'height' | 'both' | 'left') => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -59,13 +67,36 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
     
     const startWidth = cardRef.current?.getBoundingClientRect().width || 0;
     const startHeight = chartContainerRef.current?.getBoundingClientRect().height || 0;
+    const startMarginLeft = parseFloat(cardRef.current?.style.marginLeft || '0') || 0;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (direction === 'width' || direction === 'both') {
         const deltaX = moveEvent.clientX - startX;
-        const newWidth = Math.max(300, startWidth + deltaX);
+        let newWidth = Math.max(300, startWidth + deltaX);
+        
+        // Constrain to container width if provided
+        if (containerWidth) {
+            newWidth = Math.min(newWidth, containerWidth - 48); // 48px for padding
+        }
+
         if (cardRef.current) {
             cardRef.current.style.width = `${newWidth}px`;
+        }
+      }
+
+      if (direction === 'left') {
+        const deltaX = moveEvent.clientX - startX;
+        let newWidth = Math.max(300, startWidth - deltaX);
+        let newMarginLeft = Math.max(0, startMarginLeft + deltaX);
+        
+        // Constrain to container width if provided
+        if (containerWidth) {
+            newWidth = Math.min(newWidth, containerWidth - 48);
+        }
+
+        if (cardRef.current) {
+            cardRef.current.style.width = `${newWidth}px`;
+            cardRef.current.style.marginLeft = `${newMarginLeft}px`;
         }
       }
       
@@ -86,10 +117,14 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
       if (direction === 'width' || direction === 'both') {
          updates.width = cardRef.current?.style.width;
       }
+      if (direction === 'left') {
+         updates.width = cardRef.current?.style.width;
+         updates.marginLeft = cardRef.current?.style.marginLeft;
+      }
       if (direction === 'height' || direction === 'both') {
          updates.height = chartContainerRef.current?.style.height;
       }
-      onUpdate(index, updates);
+      onUpdate(index, updates, parentId);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -159,8 +194,14 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
     <div 
       ref={cardRef}
       draggable={isDraggable}
-      onDragStart={() => onDragStart(index)}
-      onDragEnter={() => onDragEnter(index)}
+      onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStart(index, parentId);
+      }}
+      onDragEnter={(e) => {
+          e.stopPropagation();
+          onDragEnter(index, parentId);
+      }}
       onDragEnd={onDragEnd}
       onDragOver={(e) => e.preventDefault()}
       className="insight-card"
@@ -171,6 +212,7 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
         padding: '24px',
         marginBottom: '0',
         width: item.width || '100%',
+        marginLeft: item.marginLeft || '0',
         transition: 'box-shadow 0.2s ease', // Removed width transition to avoid lag during resize
         position: 'relative',
         ...(isDraggable ? { cursor: 'move' } : {})
@@ -220,7 +262,7 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
                             <button
                                 key={opt.label}
                                 onClick={() => {
-                                    onUpdate(index, { width: opt.value });
+                                    onUpdate(index, { width: opt.value }, parentId);
                                     setShowWidthMenu(false);
                                 }}
                                 style={{
@@ -332,11 +374,24 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
         {title}
       </h3>
 
-      <div ref={chartContainerRef} style={{ height: item.height || '400px', width: '100%' }}>
+      <div ref={chartContainerRef} style={{ height: item.height || '400px', width: '100%', overflow: 'hidden' }}>
           {renderChart()}
       </div>
 
       {/* Resize Handles */}
+      <div
+         onMouseDown={(e) => handleResizeStart(e, 'left')}
+         className="resize-handle-left"
+         style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            bottom: 0,
+            width: '8px',
+            cursor: 'col-resize',
+            zIndex: 10,
+         }}
+       />
       <div
          onMouseDown={(e) => handleResizeStart(e, 'width')}
          className="resize-handle-right"
@@ -391,7 +446,7 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
   );
 };
 
-const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
+const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, parentId, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove, containerWidth }) => {
   const [isDraggable, setIsDraggable] = useState(false);
   const [showWidthMenu, setShowWidthMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -428,7 +483,13 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (direction === 'width' || direction === 'both') {
         const deltaX = moveEvent.clientX - startX;
-        const newWidth = Math.max(300, startWidth + deltaX);
+        let newWidth = Math.max(300, startWidth + deltaX);
+        
+        // Constrain to container width if provided
+        if (containerWidth) {
+            newWidth = Math.min(newWidth, containerWidth - 48); // 48px for padding
+        }
+
         if (cardRef.current) {
             cardRef.current.style.width = `${newWidth}px`;
         }
@@ -454,7 +515,7 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
       if (direction === 'height' || direction === 'both') {
          updates.height = contentRef.current?.style.height;
       }
-      onUpdate(index, updates);
+      onUpdate(index, updates, parentId);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -473,8 +534,14 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
     <div 
       ref={cardRef}
       draggable={isDraggable}
-      onDragStart={() => onDragStart(index)}
-      onDragEnter={() => onDragEnter(index)}
+      onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStart(index, parentId);
+      }}
+      onDragEnter={(e) => {
+          e.stopPropagation();
+          onDragEnter(index, parentId);
+      }}
       onDragEnd={onDragEnd}
       onDragOver={(e) => e.preventDefault()}
       className="insight-card"
@@ -534,7 +601,7 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
                             <button
                                 key={opt.label}
                                 onClick={() => {
-                                    onUpdate(index, { width: opt.value });
+                                    onUpdate(index, { width: opt.value }, parentId);
                                     setShowWidthMenu(false);
                                 }}
                                 style={{
@@ -587,7 +654,7 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
                         </div>
                         <button
                             onClick={() => {
-                                onRemove(index);
+                                onRemove(index, parentId);
                                 setShowMoreMenu(false);
                             }}
                             style={{
@@ -620,7 +687,7 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
           {subtype === 'header' ? (
             <input
                 value={text}
-                onChange={(e) => onUpdate(index, { content: { ...item.content, text: e.target.value } })}
+                onChange={(e) => onUpdate(index, { content: { ...item.content, text: e.target.value } }, parentId)}
                 placeholder="Title"
                 style={{
                     fontSize: '24px',
@@ -636,7 +703,7 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
           ) : (
             <textarea
                 value={text}
-                onChange={(e) => onUpdate(index, { content: { ...item.content, text: e.target.value } })}
+                onChange={(e) => onUpdate(index, { content: { ...item.content, text: e.target.value } }, parentId)}
                 placeholder="Analysis content goes here..."
                 style={{
                     fontSize: '16px',
@@ -708,7 +775,7 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
   );
 };
 
-const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
+const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index, parentId, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
   const [isDraggable, setIsDraggable] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -725,7 +792,7 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
 
   const handleTitleSubmit = () => {
     setIsEditingTitle(false);
-    onUpdate(index, { content: { ...item.content, title } });
+    onUpdate(index, { content: { ...item.content, title } }, parentId);
   };
 
   const handleResizeStart = (e: React.MouseEvent, direction: 'width' | 'height' | 'both') => {
@@ -751,7 +818,9 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
         const deltaY = moveEvent.clientY - startY;
         const newHeight = Math.max(100, startHeight + deltaY);
         if (contentRef.current) {
-            contentRef.current.style.height = `${newHeight}px`;
+            // Update minHeight instead of height for dynamic sizing
+            contentRef.current.style.minHeight = `${newHeight}px`;
+            contentRef.current.style.height = 'auto';
         }
       }
     };
@@ -765,21 +834,30 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
          updates.width = cardRef.current?.style.width;
       }
       if (direction === 'height' || direction === 'both') {
-         updates.height = contentRef.current?.style.height;
+         // For sections, we store the min-height as the height preference
+         updates.height = contentRef.current?.style.minHeight;
       }
-      onUpdate(index, updates);
+      onUpdate(index, updates, parentId);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const sectionItems = item.content.items || [];
+
   return (
     <div 
       ref={cardRef}
       draggable={isDraggable}
-      onDragStart={() => onDragStart(index)}
-      onDragEnter={() => onDragEnter(index)}
+      onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStart(index, parentId);
+      }}
+      onDragEnter={(e) => {
+          e.stopPropagation();
+          onDragEnter(index, parentId);
+      }}
       onDragEnd={onDragEnd}
       onDragOver={(e) => e.preventDefault()}
       className="section-card"
@@ -856,7 +934,7 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
                     onClick={() => {
                         const newExpanded = !isExpanded;
                         setIsExpanded(newExpanded);
-                        onUpdate(index, { height: newExpanded ? '600px' : '300px' });
+                        onUpdate(index, { height: newExpanded ? '600px' : '300px' }, parentId);
                     }}
                     style={{ padding: '8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
@@ -865,7 +943,7 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
                     <Maximize2 size={18} />
                 </button>
                 <button 
-                    onClick={() => onRemove(index)}
+                    onClick={() => onRemove(index, parentId)}
                     style={{ padding: '8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -877,23 +955,82 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
 
         <div 
             ref={contentRef}
+            onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Allow drop
+            }}
+            onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // This will be handled by the parent's onDragEnd logic if we set the dragOverItem correctly
+                // But since we need to know we dropped INTO the section, we might need a special handler
+                // For now, let's rely on onDragEnter setting the dragOverItem to a special value or handling it in onDragEnd
+                onDragEnter(-1, item.id); // -1 indicates dropping into the container, not replacing an item
+            }}
             style={{ 
-                height: item.height || '300px', 
+                minHeight: item.height || '300px', 
+                height: 'auto',
                 width: '100%',
-                border: '2px dashed #e2e8f0',
+                border: sectionItems.length === 0 ? '2px dashed #e2e8f0' : 'none',
                 borderRadius: '12px',
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#f8fafc'
+                flexDirection: sectionItems.length === 0 ? 'column' : 'row',
+                flexWrap: 'wrap',
+                alignItems: sectionItems.length === 0 ? 'center' : 'flex-start',
+                justifyContent: sectionItems.length === 0 ? 'center' : 'flex-start',
+                backgroundColor: '#f8fafc',
+                gap: '24px',
+                padding: sectionItems.length === 0 ? 0 : '24px',
+                overflow: 'visible', // Allow content to expand container
+                position: 'relative'
             }}
         >
-            <LayoutTemplate size={32} color="#94a3b8" style={{ marginBottom: '12px' }} />
-            <span style={{ fontSize: '14px', fontWeight: 600, color: '#64748b' }}>Grid Canvas</span>
-            <span style={{ fontSize: '11px', fontWeight: 500, color: '#94a3b8', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Drag elements here and use the layout icon to resize
-            </span>
+            {sectionItems.length === 0 ? (
+                <>
+                    <LayoutTemplate size={32} color="#94a3b8" style={{ marginBottom: '12px' }} />
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#64748b' }}>Grid Canvas</span>
+                    <span style={{ fontSize: '11px', fontWeight: 500, color: '#94a3b8', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Drag elements here and use the layout icon to resize
+                    </span>
+                </>
+            ) : (
+                sectionItems.map((subItem: CanvasItem, subIndex: number) => {
+                    if (subItem.type === 'insight') {
+                        return (
+                            <DraggableInsightCard
+                                key={subItem.id}
+                                item={subItem}
+                                index={subIndex}
+                                parentId={item.id}
+                                onDragStart={onDragStart}
+                                onDragEnter={onDragEnter}
+                                onDragEnd={onDragEnd}
+                                onUpdate={onUpdate}
+                                onRemove={onRemove}
+                                containerWidth={contentRef.current?.getBoundingClientRect().width}
+                            />
+                        );
+                    }
+                    if (subItem.type === 'text') {
+                        return (
+                            <DraggableTextCard
+                                key={subItem.id}
+                                item={subItem}
+                                index={subIndex}
+                                parentId={item.id}
+                                onDragStart={onDragStart}
+                                onDragEnter={onDragEnter}
+                                onDragEnd={onDragEnd}
+                                onUpdate={onUpdate}
+                                onRemove={onRemove}
+                                containerWidth={contentRef.current?.getBoundingClientRect().width}
+                            />
+                        );
+                    }
+                    return null;
+                })
+            )}
         </div>
 
        <div
@@ -955,8 +1092,8 @@ export const CreateDashboardPage: React.FC = () => {
   const [showTextMenu, setShowTextMenu] = useState(false);
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
   
-  const dragItem = useRef<number | null>(null);
-  const dragOverItem = useRef<number | null>(null);
+  const dragItem = useRef<DragItemInfo | null>(null);
+  const dragOverItem = useRef<DragItemInfo | null>(null);
   const textMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -970,26 +1107,86 @@ export const CreateDashboardPage: React.FC = () => {
   }, []);
 
   const handleSort = () => {
-    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (!dragItem.current || !dragOverItem.current) return;
     
-    const _canvasItems = [...canvasItems];
-    const draggedItemContent = _canvasItems.splice(dragItem.current, 1)[0];
-    _canvasItems.splice(dragOverItem.current, 0, draggedItemContent);
+    const sourceParentId = dragItem.current.parentId;
+    const destParentId = dragOverItem.current.parentId;
+    const sourceIndex = dragItem.current.index;
+    const destIndex = dragOverItem.current.index;
+
+    // Deep clone to avoid mutation issues
+    const items = JSON.parse(JSON.stringify(canvasItems));
+
+    // Helper to find list by parentId
+    const getList = (parentId: string): CanvasItem[] => {
+        if (parentId === 'root') return items;
+        const section = items.find((i: CanvasItem) => i.id === parentId);
+        if (section && section.type === 'section') {
+            if (!section.content.items) section.content.items = [];
+            return section.content.items;
+        }
+        return [];
+    };
+
+    const sourceList = getList(sourceParentId);
+    const destList = getList(destParentId);
+
+    let movedItem: CanvasItem;
+
+    // If dropping into a section container (special case index -1)
+    if (destIndex === -1) {
+        // Remove from source
+        [movedItem] = sourceList.splice(sourceIndex, 1);
+        // Add to end of destination
+        destList.push(movedItem);
+    } else {
+        // Standard reorder or move
+        if (sourceParentId === destParentId) {
+            [movedItem] = sourceList.splice(sourceIndex, 1);
+            sourceList.splice(destIndex, 0, movedItem);
+        } else {
+            [movedItem] = sourceList.splice(sourceIndex, 1);
+            destList.splice(destIndex, 0, movedItem);
+        }
+    }
+
+    // Auto-resize if moving into a section from outside
+    if (destParentId !== 'root' && sourceParentId !== destParentId) {
+        movedItem.width = '100%';
+    }
     
     dragItem.current = null;
     dragOverItem.current = null;
-    setCanvasItems(_canvasItems);
+    setCanvasItems(items);
   };
 
-  const handleUpdateItem = (index: number, updates: Partial<CanvasItem>) => {
-    const newItems = [...canvasItems];
-    newItems[index] = { ...newItems[index], ...updates };
+  const handleUpdateItem = (index: number, updates: Partial<CanvasItem>, parentId: string = 'root') => {
+    const newItems = JSON.parse(JSON.stringify(canvasItems));
+    
+    if (parentId === 'root') {
+        newItems[index] = { ...newItems[index], ...updates };
+    } else {
+        const section = newItems.find((i: CanvasItem) => i.id === parentId);
+        if (section && section.type === 'section' && section.content.items) {
+            section.content.items[index] = { ...section.content.items[index], ...updates };
+        }
+    }
+    
     setCanvasItems(newItems);
   };
 
-  const handleRemoveItem = (index: number) => {
-    const newItems = [...canvasItems];
-    newItems.splice(index, 1);
+  const handleRemoveItem = (index: number, parentId: string = 'root') => {
+    const newItems = JSON.parse(JSON.stringify(canvasItems));
+    
+    if (parentId === 'root') {
+        newItems.splice(index, 1);
+    } else {
+        const section = newItems.find((i: CanvasItem) => i.id === parentId);
+        if (section && section.type === 'section' && section.content.items) {
+            section.content.items.splice(index, 1);
+        }
+    }
+    
     setCanvasItems(newItems);
   };
 
@@ -1233,8 +1430,9 @@ export const CreateDashboardPage: React.FC = () => {
                     key={item.id}
                     item={item}
                     index={index}
-                    onDragStart={(idx) => (dragItem.current = idx)}
-                    onDragEnter={(idx) => (dragOverItem.current = idx)}
+                    parentId="root"
+                    onDragStart={(idx, pid) => (dragItem.current = { index: idx, parentId: pid })}
+                    onDragEnter={(idx, pid) => (dragOverItem.current = { index: idx, parentId: pid })}
                     onDragEnd={handleSort}
                     onUpdate={handleUpdateItem}
                     onRemove={handleRemoveItem}
@@ -1247,8 +1445,9 @@ export const CreateDashboardPage: React.FC = () => {
                     key={item.id}
                     item={item}
                     index={index}
-                    onDragStart={(idx) => (dragItem.current = idx)}
-                    onDragEnter={(idx) => (dragOverItem.current = idx)}
+                    parentId="root"
+                    onDragStart={(idx, pid) => (dragItem.current = { index: idx, parentId: pid })}
+                    onDragEnter={(idx, pid) => (dragOverItem.current = { index: idx, parentId: pid })}
                     onDragEnd={handleSort}
                     onUpdate={handleUpdateItem}
                     onRemove={handleRemoveItem}
@@ -1261,8 +1460,9 @@ export const CreateDashboardPage: React.FC = () => {
                     key={item.id}
                     item={item}
                     index={index}
-                    onDragStart={(idx) => (dragItem.current = idx)}
-                    onDragEnter={(idx) => (dragOverItem.current = idx)}
+                    parentId="root"
+                    onDragStart={(idx, pid) => (dragItem.current = { index: idx, parentId: pid })}
+                    onDragEnter={(idx, pid) => (dragOverItem.current = { index: idx, parentId: pid })}
                     onDragEnd={handleSort}
                     onUpdate={handleUpdateItem}
                     onRemove={handleRemoveItem}
