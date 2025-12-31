@@ -72,8 +72,17 @@ def get_dashboards(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all dashboards for the current user"""
+    """Get all dashboards for the current user (excludes insights)"""
     return DashboardService.get_user_dashboards(current_user, db)
+
+
+@router.get("/insights", response_model=List[DashboardListItem])
+def get_insights(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all insights for the current user (excludes regular dashboards)"""
+    return DashboardService.get_user_insights(current_user, db)
 
 
 @router.get("/{dashboard_id}", response_model=Dashboard)

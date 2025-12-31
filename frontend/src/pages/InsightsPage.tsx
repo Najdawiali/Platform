@@ -32,15 +32,15 @@ export const InsightsPage: React.FC = () => {
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   const { data: dashboards = [] } = useQuery<DashboardListItem[]>({
-    queryKey: ['dashboards'],
-    queryFn: () => dashboardService.getDashboards(),
+    queryKey: ['insights'],
+    queryFn: () => dashboardService.getInsights(),
     retry: false,
   });
 
   const deleteMutation = useMutation({
     mutationFn: (dashboardId: string) => dashboardService.deleteDashboard(dashboardId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+      queryClient.invalidateQueries({ queryKey: ['insights'] });
     },
   });
 

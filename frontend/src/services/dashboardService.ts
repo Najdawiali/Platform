@@ -3,9 +3,15 @@ import api from '../config/api';
 import type { Dashboard, DashboardListItem, DashboardCreate } from '../types';
 
 export const dashboardService = {
-  // Get all dashboards for current user
+  // Get all dashboards for current user (excludes insights)
   async getDashboards(): Promise<DashboardListItem[]> {
     const response = await api.get('/api/dashboards/');
+    return response.data;
+  },
+
+  // Get all insights for current user (excludes regular dashboards)
+  async getInsights(): Promise<DashboardListItem[]> {
+    const response = await api.get('/api/dashboards/insights');
     return response.data;
   },
 

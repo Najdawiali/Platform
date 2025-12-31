@@ -26,6 +26,9 @@ class Dashboard(Base):
     # Cache Configuration (for live mode)
     cache_ttl_seconds = Column(Integer, nullable=True)  # Cache duration in seconds
     
+    # Distinguish Insights from Dashboards
+    is_insight = Column(Boolean, default=False)  # True for insights, False for dashboards
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

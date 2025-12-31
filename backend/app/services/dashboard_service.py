@@ -58,7 +58,8 @@ class DashboardService:
         dashboard = Dashboard(
             user_id=user.id,
             name=dashboard_data.name,
-            description=dashboard_data.description
+            description=dashboard_data.description,
+            is_insight=False  # This is a regular dashboard, not an insight
         )
         
         db.add(dashboard)
@@ -127,6 +128,7 @@ class DashboardService:
             user_id=user.id,
             name=insight_data.name,
             description=insight_data.description,
+            is_insight=True  # This is an insight, not a regular dashboard
         )
         db.add(dashboard)
         db.flush()
@@ -161,7 +163,7 @@ class DashboardService:
 
     @staticmethod
     def get_user_dashboards(user: User, db: Session) -> List[DashboardListItem]:
-        """Get all dashboards for a user with chart count"""
+        """Get all dashboards for a user with chart count (excludes insights)"""
         
         dashboards = db.query(
             Dashboard.id,
@@ -174,7 +176,46 @@ class DashboardService:
         ).outerjoin(
             DashboardChart, Dashboard.id == DashboardChart.dashboard_id
         ).filter(
-            Dashboard.user_id == user.id
+            Dashboard.user_id == user.id,
+            Dashboard.is_insight == False  # Only return dashboards, not insights
+        ).group_by(
+            Dashboard.id,
+            Dashboard.name,
+            Dashboard.description,
+            Dashboard.created_at,
+            Dashboard.updated_at
+        ).all()
+        
+        return [
+            DashboardListItem(
+                id=d.id,
+                name=d.name,
+                description=d.description,
+                chart_count=d.chart_count,
+                first_chart_type=d.first_chart_type,
+                created_at=d.created_at,
+                updated_at=d.updated_at
+            )
+            for d in dashboards
+        ]
+
+    @staticmethod
+    def get_user_insights(user: User, db: Session) -> List[DashboardListItem]:
+        """Get all insights for a user with chart count (excludes regular dashboards)"""
+        
+        dashboards = db.query(
+            Dashboard.id,
+            Dashboard.name,
+            Dashboard.description,
+            Dashboard.created_at,
+            Dashboard.updated_at,
+            func.count(DashboardChart.id).label('chart_count'),
+            func.max(DashboardChart.chart_type).label('first_chart_type')
+        ).outerjoin(
+            DashboardChart, Dashboard.id == DashboardChart.dashboard_id
+        ).filter(
+            Dashboard.user_id == user.id,
+            Dashboard.is_insight == True  # Only return insights, not regular dashboards
         ).group_by(
             Dashboard.id,
             Dashboard.name,

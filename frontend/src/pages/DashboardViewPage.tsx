@@ -333,9 +333,22 @@ const DashboardViewPage: React.FC = () => {
   });
 
   const sqlInsight = useMemo(() => {
-    const chart = dashboard?.charts?.[0];
+    // Only show insight view if:
+    // 1. Dashboard has exactly 1 chart (single-chart insight)
+    // 2. Chart has SQL query in config
+    // 3. Dashboard is_insight flag is true (if available)
+    if (!dashboard || dashboard.charts?.length !== 1) return null;
+    
+    const chart = dashboard.charts[0];
     const sql = chart?.config?.sql_query;
-    if (!dashboard || !chart || !sql) return null;
+    if (!chart || !sql) return null;
+    
+    console.log('Detected SQL Insight:', { 
+      dashboardId: dashboard.id, 
+      chartCount: dashboard.charts.length,
+      hasSqlQuery: !!sql 
+    });
+    
     return { dashboard, chart, sql: String(sql) };
   }, [dashboard]);
 
@@ -1741,6 +1754,13 @@ const DashboardViewPage: React.FC = () => {
 
   const chartsData = chartQueries.data || [];
 
+  console.log('DashboardViewPage render:', {
+    dashboardId: dashboard?.id,
+    chartCount: dashboard?.charts?.length,
+    sqlInsight: !!sqlInsight,
+    viewType: sqlInsight ? 'insight' : 'dashboard'
+  });
+
   if (sqlInsight) {
     const chartData = chartsData.find(d => d.chartId === sqlInsight.chart.id);
     
@@ -2606,24 +2626,33 @@ const DashboardViewPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))',
-              gap: '24px',
-            }}>
+            <div style={{ position: 'relative', width: '100%' }}>
               {dashboard.charts.map((chart) => {
                 const chartData = chartsData.find(d => d.chartId === chart.id);
+                
+                // Calculate percentage-based positioning
+                const leftPercent = (chart.position_x / 12) * 100;
+                const widthPercent = (chart.width / 12) * 100;
+                const topPx = chart.position_y * 100;
+                const heightPx = chart.height * 100;
                 
                 return (
                   <div
                     key={chart.id}
                     style={{
+                      position: 'absolute',
+                      left: `${leftPercent}%`,
+                      top: `${topPx}px`,
+                      width: `calc(${widthPercent}% - ${chart.position_x > 0 ? '24px' : '0px'})`,
+                      height: `${heightPx}px`,
                       backgroundColor: 'white',
                       borderRadius: '16px',
                       border: '1px solid #e2e8f0',
                       overflow: 'hidden',
                       boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
-                      transition: 'all 0.2s ease'
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      flexDirection: 'column'
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.1)';
@@ -2638,7 +2667,8 @@ const DashboardViewPage: React.FC = () => {
                     <div style={{
                       padding: '16px 20px',
                       borderBottom: '1px solid #f1f5f9',
-                      backgroundColor: '#f8fafc'
+                      backgroundColor: '#f8fafc',
+                      flexShrink: 0
                     }}>
                       <h3 style={{
                         fontSize: '16px',
@@ -2651,27 +2681,34 @@ const DashboardViewPage: React.FC = () => {
                     </div>
                     
                     {/* Chart Content */}
-                    <div style={{ padding: '20px' }}>
+                    <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                       {/* Inner Title (from config) */}
                       {/* Debug log removed */}
                       {chart.config?.chartTitle && (
-                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', marginBottom: '10px', flexShrink: 0 }}>
                           {chart.config.chartTitle}
                         </div>
                       )}
 
-                      {chartQueries.isLoading ? (
-                        <div style={{ padding: '64px', textAlign: 'center', color: '#64748b' }}>
-                          <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
-                          Loading chart data...
-                        </div>
-                      ) : (
-                        renderChart(chart, chartData)
-                      )}
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        {chartQueries.isLoading ? (
+                          <div style={{ padding: '64px', textAlign: 'center', color: '#64748b' }}>
+                            <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
+                            Loading chart data...
+                          </div>
+                        ) : (
+                          renderChart(chart, chartData)
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
+              {/* Spacer to ensure container has proper height */}
+              <div style={{ 
+                position: 'relative', 
+                height: `${Math.max(...dashboard.charts.map(c => c.position_y + c.height)) * 100}px` 
+              }} />
             </div>
           )}
         </div>

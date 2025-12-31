@@ -21,14 +21,11 @@ interface LibraryModalProps {
 }
 
 export const LibraryModal: React.FC<LibraryModalProps> = ({ isOpen, onClose, onSelect }) => {
-  const { data: allDashboards = [], isLoading } = useQuery({
-    queryKey: ['dashboards'],
-    queryFn: dashboardService.getDashboards,
+  const { data: insights = [], isLoading } = useQuery({
+    queryKey: ['insights'],
+    queryFn: dashboardService.getInsights,
     enabled: isOpen, // Only fetch when open
   });
-
-  // Filter for insights (single chart dashboards)
-  const insights = allDashboards.filter(d => d.chart_count === 1);
 
   if (!isOpen) return null;
 

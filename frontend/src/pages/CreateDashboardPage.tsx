@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, BarChart3, Type, LayoutTemplate, Share2, Send, GripVertical, MoreVertical, Maximize2, Trash2, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, Type, LayoutTemplate, Share2, Send, GripVertical, MoreVertical, Maximize2, Trash2, X, Upload } from 'lucide-react';
 import { LibraryModal } from '../components/LibraryModal';
 import { dashboardService } from '../services/dashboardService';
 import { ProgressiveXYChart } from '../components/ProgressiveXYChart';
@@ -776,10 +776,12 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, p
 };
 
 const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index, parentId, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
+  const navigate = useNavigate();
   const [isDraggable, setIsDraggable] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [title, setTitle] = useState(item.content.title || 'MAIN SECTION');
+  const [isPublishing, setIsPublishing] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -789,6 +791,150 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
       inputRef.current.focus();
     }
   }, [isEditingTitle]);
+
+  const handlePublishSection = async () => {
+    const sectionItems = item.content.items || [];
+    
+    if (sectionItems.length === 0) {
+      alert('Cannot publish an empty section. Please add at least one chart.');
+      return;
+    }
+
+    // Validate that all items are insights with chart data
+    const insights = sectionItems.filter((i: CanvasItem) => i.type === 'insight');
+    if (insights.length === 0) {
+      alert('Section must contain at least one insight/chart to publish.');
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      // Get section container width to calculate proportional widths
+      const sectionWidth = contentRef.current?.getBoundingClientRect().width || 1200;
+      
+      // Collect text blocks to add to description
+      const textBlocks = sectionItems
+        .filter((i: CanvasItem) => i.type === 'text')
+        .map((i: CanvasItem) => i.content.text)
+        .filter(Boolean);
+      
+      const description = textBlocks.length > 0 
+        ? `Published from section: ${title}\n\n${textBlocks.join('\n\n')}`
+        : `Published from section: ${title}`;
+      
+      // Prepare charts data preserving the layout
+      let currentY = 0; // Track vertical position
+      let currentRowX = 0; // Track horizontal position in current row
+      let currentRowHeight = 0; // Track height of current row
+      
+      const charts = insights.map((insight: CanvasItem, idx: number) => {
+        const { dashboardId, chart } = insight.content;
+        
+        // Calculate grid width (12-column system)
+        // Parse width from CSS values like '100%', 'calc(50% - 12px)', or '600px'
+        let gridWidth = 12; // Default full width
+        if (insight.width) {
+          const widthStr = insight.width;
+          if (widthStr.includes('%')) {
+            const percentage = parseInt(widthStr);
+            gridWidth = Math.round((percentage / 100) * 12);
+          } else if (widthStr.includes('px')) {
+            const pixels = parseInt(widthStr);
+            const percentage = (pixels / sectionWidth) * 100;
+            gridWidth = Math.round((percentage / 100) * 12);
+          } else if (widthStr.includes('calc')) {
+            // Handle calc expressions like 'calc(50% - 12px)'
+            if (widthStr.includes('50%')) gridWidth = 6;
+            else if (widthStr.includes('33%')) gridWidth = 4;
+            else if (widthStr.includes('66%')) gridWidth = 8;
+            else if (widthStr.includes('25%')) gridWidth = 3;
+            else if (widthStr.includes('75%')) gridWidth = 9;
+          }
+        }
+        
+        // Constrain to valid grid values
+        gridWidth = Math.max(1, Math.min(12, gridWidth));
+        
+        // Calculate grid height (assuming 100px per unit)
+        let gridHeight = 4; // Default height
+        if (insight.height) {
+          const heightStr = insight.height;
+          if (heightStr.includes('px')) {
+            const pixels = parseInt(heightStr);
+            gridHeight = Math.max(3, Math.round(pixels / 100));
+          }
+        }
+        
+        // Calculate position based on layout flow
+        let posX = currentRowX;
+        let posY = currentY;
+        
+        // Check if chart fits in current row
+        if (currentRowX + gridWidth > 12) {
+          // Move to next row
+          currentY += currentRowHeight;
+          currentRowX = 0;
+          currentRowHeight = 0;
+          posX = 0;
+          posY = currentY;
+        }
+        
+        // Update tracking variables
+        currentRowX += gridWidth;
+        currentRowHeight = Math.max(currentRowHeight, gridHeight);
+        
+        // If this chart takes full width, move to next row for next chart
+        if (gridWidth === 12) {
+          currentY += gridHeight;
+          currentRowX = 0;
+          currentRowHeight = 0;
+        }
+        
+        return {
+          dataset_id: chart.dataset_id,
+          chart_type: chart.chart_type,
+          x_column: chart.x_column || null,
+          y_column: chart.y_column || null,
+          title: chart.title || insight.content.title,
+          config: chart.config || {},
+          position_x: posX,
+          position_y: posY,
+          width: gridWidth,
+          height: gridHeight
+        };
+      });
+
+      // Create the dashboard
+      const dashboardPayload = {
+        name: title,
+        description: description,
+        charts: charts
+      };
+
+      console.log('Publishing dashboard with payload:', {
+        name: dashboardPayload.name,
+        chartCount: charts.length,
+        charts: charts.map(c => ({
+          title: c.title,
+          position: `(${c.position_x}, ${c.position_y})`,
+          size: `${c.width}x${c.height}`,
+          type: c.chart_type
+        }))
+      });
+
+      const createdDashboard = await dashboardService.createDashboard(dashboardPayload);
+      
+      // Success feedback with confirmation
+      if (window.confirm(`Dashboard "${title}" published successfully!\n\nWould you like to view it now?`)) {
+        navigate(`/dashboards/${createdDashboard.id}`);
+      }
+    } catch (error: any) {
+      console.error('Failed to publish section:', error);
+      alert(`Failed to publish dashboard: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   const handleTitleSubmit = () => {
     setIsEditingTitle(false);
@@ -930,6 +1076,43 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
             )}
 
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                    onClick={handlePublishSection}
+                    disabled={isPublishing || (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0}
+                    title="Publish this section as a new standalone dashboard"
+                    style={{ 
+                        padding: '8px 12px', 
+                        borderRadius: '8px', 
+                        border: 'none', 
+                        background: isPublishing ? '#e0e7ff' : (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0 ? '#e2e8f0' : '#4f46e5', 
+                        cursor: isPublishing || (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0 ? 'not-allowed' : 'pointer', 
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        opacity: isPublishing || (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0 ? 0.6 : 1,
+                        transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (!isPublishing && (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) > 0) {
+                            e.currentTarget.style.backgroundColor = '#4338ca';
+                            e.currentTarget.style.transform = 'translateY(-1px)';
+                            e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!isPublishing && (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) > 0) {
+                            e.currentTarget.style.backgroundColor = '#4f46e5';
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = 'none';
+                        }
+                    }}
+                >
+                    <Upload size={16} />
+                    {isPublishing ? 'Publishing...' : 'Publish'}
+                </button>
                 <button 
                     onClick={() => {
                         const newExpanded = !isExpanded;
