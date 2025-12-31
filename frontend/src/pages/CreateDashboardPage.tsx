@@ -708,6 +708,247 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, o
   );
 };
 
+const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
+  const [isDraggable, setIsDraggable] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [title, setTitle] = useState(item.content.title || 'MAIN SECTION');
+  const cardRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingTitle && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isEditingTitle]);
+
+  const handleTitleSubmit = () => {
+    setIsEditingTitle(false);
+    onUpdate(index, { content: { ...item.content, title } });
+  };
+
+  const handleResizeStart = (e: React.MouseEvent, direction: 'width' | 'height' | 'both') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startX = e.clientX;
+    const startY = e.clientY;
+    
+    const startWidth = cardRef.current?.getBoundingClientRect().width || 0;
+    const startHeight = contentRef.current?.getBoundingClientRect().height || 0;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (direction === 'width' || direction === 'both') {
+        const deltaX = moveEvent.clientX - startX;
+        const newWidth = Math.max(300, startWidth + deltaX);
+        if (cardRef.current) {
+            cardRef.current.style.width = `${newWidth}px`;
+        }
+      }
+      
+      if (direction === 'height' || direction === 'both') {
+        const deltaY = moveEvent.clientY - startY;
+        const newHeight = Math.max(100, startHeight + deltaY);
+        if (contentRef.current) {
+            contentRef.current.style.height = `${newHeight}px`;
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      
+      const updates: Partial<CanvasItem> = {};
+      if (direction === 'width' || direction === 'both') {
+         updates.width = cardRef.current?.style.width;
+      }
+      if (direction === 'height' || direction === 'both') {
+         updates.height = contentRef.current?.style.height;
+      }
+      onUpdate(index, updates);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  return (
+    <div 
+      ref={cardRef}
+      draggable={isDraggable}
+      onDragStart={() => onDragStart(index)}
+      onDragEnter={() => onDragEnter(index)}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => e.preventDefault()}
+      className="section-card"
+      style={{
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        border: '1px solid #e2e8f0',
+        padding: '24px',
+        marginBottom: '0',
+        width: item.width || '100%',
+        transition: 'all 0.2s ease',
+        position: 'relative',
+        ...(isDraggable ? { cursor: 'move' } : {})
+      }}
+    >
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
+            <div 
+                onMouseEnter={() => setIsDraggable(true)}
+                onMouseLeave={() => setIsDraggable(false)}
+                style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '4px', marginRight: '12px', color: '#94a3b8' }}
+                onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
+                onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
+            >
+                <GripVertical size={20} />
+            </div>
+            
+            {isEditingTitle ? (
+                <input
+                    ref={inputRef}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    onBlur={handleTitleSubmit}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleTitleSubmit();
+                    }}
+                    style={{
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        margin: 0,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        border: '1px solid #4f46e5',
+                        borderRadius: '4px',
+                        padding: '4px 8px',
+                        outline: 'none',
+                        width: '200px'
+                    }}
+                />
+            ) : (
+                <h3 
+                    onClick={() => setIsEditingTitle(true)}
+                    style={{ 
+                        fontSize: '14px', 
+                        fontWeight: 700, 
+                        color: '#0f172a', 
+                        margin: 0, 
+                        textTransform: 'uppercase', 
+                        letterSpacing: '0.5px',
+                        cursor: 'text',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid transparent'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                    {item.content.title || 'MAIN SECTION'}
+                </h3>
+            )}
+
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                    onClick={() => {
+                        const newExpanded = !isExpanded;
+                        setIsExpanded(newExpanded);
+                        onUpdate(index, { height: newExpanded ? '600px' : '300px' });
+                    }}
+                    style={{ padding: '8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                    <Maximize2 size={18} />
+                </button>
+                <button 
+                    onClick={() => onRemove(index)}
+                    style={{ padding: '8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                    <Trash2 size={18} />
+                </button>
+            </div>
+        </div>
+
+        <div 
+            ref={contentRef}
+            style={{ 
+                height: item.height || '300px', 
+                width: '100%',
+                border: '2px dashed #e2e8f0',
+                borderRadius: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#f8fafc'
+            }}
+        >
+            <LayoutTemplate size={32} color="#94a3b8" style={{ marginBottom: '12px' }} />
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#64748b' }}>Grid Canvas</span>
+            <span style={{ fontSize: '11px', fontWeight: 500, color: '#94a3b8', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Drag elements here and use the layout icon to resize
+            </span>
+        </div>
+
+       <div
+         onMouseDown={(e) => handleResizeStart(e, 'width')}
+         className="resize-handle-right"
+         style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: '8px',
+            cursor: 'col-resize',
+            zIndex: 10,
+         }}
+       />
+       <div
+         onMouseDown={(e) => handleResizeStart(e, 'height')}
+         className="resize-handle-bottom"
+         style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: '8px',
+            cursor: 'row-resize',
+            zIndex: 10,
+         }}
+       />
+       <div
+         onMouseDown={(e) => handleResizeStart(e, 'both')}
+         className="resize-handle-corner"
+         style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 0,
+            width: '16px',
+            height: '16px',
+            cursor: 'nwse-resize',
+            zIndex: 20,
+         }}
+       >
+         <div style={{
+            position: 'absolute',
+            right: '4px',
+            bottom: '4px',
+            width: '6px',
+            height: '6px',
+            borderRight: '2px solid #cbd5e1',
+            borderBottom: '2px solid #cbd5e1',
+         }} />
+       </div>
+    </div>
+  );
+};
+
 export const CreateDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -764,6 +1005,18 @@ export const CreateDashboardPage: React.FC = () => {
       height: subtype === 'header' ? 'auto' : '150px'
     }]);
     setShowTextMenu(false);
+  };
+
+  const handleSectionAdd = () => {
+    setCanvasItems(prev => [...prev, {
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'section',
+      content: {
+        title: 'MAIN SECTION'
+      },
+      width: '100%',
+      height: '300px'
+    }]);
   };
 
   const handleInsightSelect = async (insightSummary: any) => {
@@ -906,7 +1159,7 @@ export const CreateDashboardPage: React.FC = () => {
                     </div>
                 )}
             </div>
-            <button className="toolbar-btn">
+            <button className="toolbar-btn" onClick={handleSectionAdd}>
               <LayoutTemplate size={16} />
               <span>Section</span>
             </button>
@@ -964,11 +1217,11 @@ export const CreateDashboardPage: React.FC = () => {
             position: 'relative',
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
           }}>
-              <div style={{ textAlign: 'center', color: '#0f172a' }}>
+              <div style={{ textAlign: 'center', color: '#cbd5e1' }}>
                   <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
                       <BarChart3 size={48} color="#4f46e5" strokeWidth={1.5} />
                   </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: 800, fontStyle: 'italic', letterSpacing: '-0.5px' }}>BLUEPRINT EMPTY</h2>
+                  <h2 style={{ fontSize: '24px', fontWeight: 800, fontStyle: 'italic', letterSpacing: '-0.5px' }}>Start Building Your Dashboard</h2>
               </div>
           </div>
         ) : (
@@ -991,6 +1244,20 @@ export const CreateDashboardPage: React.FC = () => {
               if (item.type === 'text') {
                 return (
                   <DraggableTextCard
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    onDragStart={(idx) => (dragItem.current = idx)}
+                    onDragEnter={(idx) => (dragOverItem.current = idx)}
+                    onDragEnd={handleSort}
+                    onUpdate={handleUpdateItem}
+                    onRemove={handleRemoveItem}
+                  />
+                );
+              }
+              if (item.type === 'section') {
+                return (
+                  <DraggableSectionCard
                     key={item.id}
                     item={item}
                     index={index}
