@@ -159,8 +159,27 @@ const SavedTableChart: React.FC<{
 
   const tableColumns = (columns.length > 0 ? columns : Object.keys(rows[0] || {})).filter((c) => typeof c === 'string');
 
+  console.log('SavedTableChart render:', {
+    dashboardId,
+    chartId,
+    rowCount: rows.length,
+    hasMore,
+    containerHeight: containerRef.current?.clientHeight,
+    scrollHeight: containerRef.current?.scrollHeight
+  });
+
   return (
-    <div ref={containerRef} onScroll={onScroll} style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
+    <div 
+      ref={containerRef} 
+      onScroll={onScroll} 
+      style={{ 
+        overflowX: 'auto', 
+        maxHeight: '100%',
+        height: '100%',
+        overflowY: 'auto',
+        position: 'relative'
+      }}
+    >
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: tableDense ? '11px' : '13px' }}>
         <thead>
           <tr style={{ backgroundColor: '#f8fafc', position: 'sticky', top: 0 }}>
@@ -360,27 +379,11 @@ const DashboardViewPage: React.FC = () => {
   });
 
   const renderChart = (chart: any, chartData: any) => {
-    // Debug log removed
-    
     const cfg = chart.config || {};
-    const chartTitle = typeof cfg.chartTitle === 'string' && cfg.chartTitle.trim() ? cfg.chartTitle : null;
-    
-    // Helper to wrap chart with title
-    const withTitle = (content: React.ReactNode) => {
-      if (!chartTitle) return content;
-      return (
-        <>
-          <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
-            {chartTitle}
-          </div>
-          {content}
-        </>
-      );
-    };
     
     // Table charts are paginated/infinite-scroll; do not rely on the dashboard-wide prefetch.
     if (chart.chart_type === 'table') {
-      return withTitle(<SavedTableChart dashboardId={id!} chartId={chart.id} cfg={cfg} />);
+      return <SavedTableChart dashboardId={id!} chartId={chart.id} cfg={cfg} />;
     }
 
     // Progressive scroll-based loading for bar/line/area (horizontal scroll for vertical orientation,
@@ -513,8 +516,8 @@ const DashboardViewPage: React.FC = () => {
         return '';
       };
 
-      return withTitle(
-        <ResponsiveContainer width="100%" height={450}>
+      return (
+        <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Tooltip />
             {showLegend ? <Legend /> : null}
@@ -599,7 +602,7 @@ const DashboardViewPage: React.FC = () => {
         return Array.from(groups.entries()).map(([k, d], idx) => ({ key: k, label: k, data: d, color: palette[idx % palette.length] }));
       })();
 
-      return withTitle(
+      return (
         <ScatterPlot
           data={[]}
           series={series}
@@ -925,8 +928,8 @@ const DashboardViewPage: React.FC = () => {
 
       // Debug log removed
 
-      return withTitle(
-        <ResponsiveContainer width="100%" height={500}>
+      return (
+        <ResponsiveContainer width="100%" height="100%">
           <RadarChart 
             data={prepared.data} 
             margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
@@ -1047,7 +1050,7 @@ const DashboardViewPage: React.FC = () => {
       const denom = first > 0 ? first : 0;
       const rendered = withPercent ? funnelData.map((d) => ({ ...d, percent: denom ? d.value / denom : undefined })) : funnelData;
 
-      return withTitle(
+      return (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: 560, maxWidth: '100%' }}>
             <FunnelChartComponent data={rendered} nameKey="name" dataKey="value" colors={colors} height={320} />
@@ -1109,7 +1112,7 @@ const DashboardViewPage: React.FC = () => {
           ? `${prefix}${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${suffix}`
           : '—';
 
-        return withTitle(
+        return (
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, marginBottom: '8px' }}>{yCol}</div>
             <div style={{ fontSize: '72px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>{formatted}</div>
@@ -1173,7 +1176,7 @@ const DashboardViewPage: React.FC = () => {
         ? Math.max(1, safeMin + 1, dataMax, gaugeValue)
         : Math.max(1, maxValueCfg);
 
-      return withTitle(
+      return (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: 520, maxWidth: '100%' }}>
             <GaugeChart
@@ -1251,7 +1254,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={450}>
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis 
@@ -1302,7 +1305,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={450}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={lineData} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis 
@@ -1361,7 +1364,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={500}>
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={pieData}
@@ -1432,7 +1435,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={500}>
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={donutData}
@@ -1501,7 +1504,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={450}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={areaData} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
               <defs>
                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
@@ -1566,7 +1569,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={450}>
+          <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis 
@@ -1621,7 +1624,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={450}>
+          <ResponsiveContainer width="100%" height="100%">
             <FunnelChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
               <Tooltip 
                 content={({ active, payload }) => {
@@ -1665,7 +1668,7 @@ const DashboardViewPage: React.FC = () => {
         }));
         
         return (
-          <ResponsiveContainer width="100%" height={500}>
+          <ResponsiveContainer width="100%" height="100%">
             <RadarChart data={radarData} margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
               <PolarGrid stroke="#e2e8f0" />
               <PolarAngleAxis 
@@ -2627,7 +2630,7 @@ const DashboardViewPage: React.FC = () => {
             </div>
           ) : (
             <div style={{ position: 'relative', width: '100%' }}>
-              {dashboard.charts.map((chart) => {
+              {dashboard.charts.map((chart, chartIndex) => {
                 const chartData = chartsData.find(d => d.chartId === chart.id);
                 
                 // Calculate percentage-based positioning with gaps
@@ -2636,6 +2639,13 @@ const DashboardViewPage: React.FC = () => {
                 const widthPercent = (chart.width / 12) * 100;
                 const topPx = chart.position_y * 100 + (chart.position_y > 0 ? gap : 0);
                 const heightPx = chart.height * 100 - (gap / 2);
+                
+                console.log(`Chart ${chartIndex} (${chart.title}):`, {
+                  type: chart.chart_type,
+                  position: { x: chart.position_x, y: chart.position_y },
+                  size: { width: chart.width, height: chart.height },
+                  calculated: { leftPercent, topPx, widthPercent, heightPx }
+                });
                 
                 return (
                   <div
@@ -2655,7 +2665,8 @@ const DashboardViewPage: React.FC = () => {
                       boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
                       transition: 'all 0.2s ease',
                       display: 'flex',
-                      flexDirection: 'column'
+                      flexDirection: 'column',
+                      pointerEvents: 'auto'
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.1)';
@@ -2684,23 +2695,58 @@ const DashboardViewPage: React.FC = () => {
                     </div>
                     
                     {/* Chart Content */}
-                    <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    <div style={{ 
+                      flex: 1, 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      minHeight: 0,
+                      height: '100%',
+                      position: 'relative'
+                    }}>
                       {/* Inner Title (from config) */}
-                      {/* Debug log removed */}
                       {chart.config?.chartTitle && (
-                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', marginBottom: '10px', flexShrink: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', padding: '12px 20px 0', flexShrink: 0 }}>
                           {chart.config.chartTitle}
                         </div>
                       )}
 
-                      <div style={{ flex: 1, minHeight: 0 }}>
+                      <div style={{ 
+                        flex: 1, 
+                        minHeight: 0,
+                        height: '100%',
+                        width: '100%',
+                        padding: '20px',
+                        position: 'relative',
+                        display: 'flex',
+                        flexDirection: 'column'
+                      }}>
                         {chartQueries.isLoading ? (
                           <div style={{ padding: '64px', textAlign: 'center', color: '#64748b' }}>
                             <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
                             Loading chart data...
                           </div>
                         ) : (
-                          renderChart(chart, chartData)
+                          <div 
+                            ref={(el) => {
+                              if (el) {
+                                console.log(`Chart ${chartIndex} (${chart.title}) wrapper dimensions:`, {
+                                  clientWidth: el.clientWidth,
+                                  clientHeight: el.clientHeight,
+                                  offsetWidth: el.offsetWidth,
+                                  offsetHeight: el.offsetHeight
+                                });
+                              }
+                            }}
+                            style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              flex: 1,
+                              minHeight: 0,
+                              display: 'flex',
+                              flexDirection: 'column'
+                            }}>
+                            {renderChart(chart, chartData)}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -2709,8 +2755,11 @@ const DashboardViewPage: React.FC = () => {
               })}
               {/* Spacer to ensure container has proper height */}
               <div style={{ 
-                position: 'relative', 
-                height: `${Math.max(...dashboard.charts.map(c => c.position_y + c.height)) * 100}px` 
+                position: 'absolute', 
+                height: `${Math.max(...dashboard.charts.map(c => c.position_y + c.height)) * 100}px`,
+                width: '100%',
+                pointerEvents: 'none',
+                zIndex: -1
               }} />
             </div>
           )}
