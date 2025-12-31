@@ -2630,11 +2630,12 @@ const DashboardViewPage: React.FC = () => {
               {dashboard.charts.map((chart) => {
                 const chartData = chartsData.find(d => d.chartId === chart.id);
                 
-                // Calculate percentage-based positioning
+                // Calculate percentage-based positioning with gaps
+                const gap = 24; // Gap in pixels between charts
                 const leftPercent = (chart.position_x / 12) * 100;
                 const widthPercent = (chart.width / 12) * 100;
-                const topPx = chart.position_y * 100;
-                const heightPx = chart.height * 100;
+                const topPx = chart.position_y * 100 + (chart.position_y > 0 ? gap : 0);
+                const heightPx = chart.height * 100 - (gap / 2);
                 
                 return (
                   <div
@@ -2643,7 +2644,9 @@ const DashboardViewPage: React.FC = () => {
                       position: 'absolute',
                       left: `${leftPercent}%`,
                       top: `${topPx}px`,
-                      width: `calc(${widthPercent}% - ${chart.position_x > 0 ? '24px' : '0px'})`,
+                      width: chart.position_x + chart.width < 12 
+                        ? `calc(${widthPercent}% - ${gap}px)` 
+                        : `${widthPercent}%`,
                       height: `${heightPx}px`,
                       backgroundColor: 'white',
                       borderRadius: '16px',

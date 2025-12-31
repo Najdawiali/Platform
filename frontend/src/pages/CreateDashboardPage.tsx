@@ -823,7 +823,7 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
         : `Published from section: ${title}`;
       
       // Prepare charts data preserving the layout
-      let currentY = 0; // Track vertical position
+      let currentY = 0; // Track vertical position (in grid units)
       let currentRowX = 0; // Track horizontal position in current row
       let currentRowHeight = 0; // Track height of current row
       
@@ -855,13 +855,14 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
         // Constrain to valid grid values
         gridWidth = Math.max(1, Math.min(12, gridWidth));
         
-        // Calculate grid height (assuming 100px per unit)
-        let gridHeight = 4; // Default height
+        // Calculate grid height - add extra space for better visibility
+        let gridHeight = 5; // Increased default height for better spacing
         if (insight.height) {
           const heightStr = insight.height;
           if (heightStr.includes('px')) {
             const pixels = parseInt(heightStr);
-            gridHeight = Math.max(3, Math.round(pixels / 100));
+            // Increase height calculation for proper spacing (add 50px for gaps)
+            gridHeight = Math.max(4, Math.round((pixels + 50) / 100));
           }
         }
         
