@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, Type, LayoutTemplate, Share2, Send, GripVertical, MoreVertical, Maximize2, Trash2, X, Upload } from 'lucide-react';
 import { LibraryModal } from '../components/LibraryModal';
 import { dashboardService } from '../services/dashboardService';
@@ -925,10 +926,14 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
 
       const createdDashboard = await dashboardService.createDashboard(dashboardPayload);
       
-      // Success feedback with confirmation
-      if (window.confirm(`Dashboard "${title}" published successfully!\n\nWould you like to view it now?`)) {
-        navigate(`/dashboards/${createdDashboard.id}`);
-      }
+      // Invalidate dashboards cache so the new dashboard appears in the list
+      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+      
+      // Success feedback
+      alert(`Dashboard "${title}" published successfully! A new section has been created.`);
+      
+      // Remove the published section from canvas (a new one will auto-create)
+      onRemove(index, parentId);
     } catch (error: any) {
       console.error('Failed to publish section:', error);
       alert(`Failed to publish dashboard: ${error.response?.data?.detail || error.message}`);
@@ -1020,123 +1025,6 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
         ...(isDraggable ? { cursor: 'move' } : {})
       }}
     >
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
-            <div 
-                onMouseEnter={() => setIsDraggable(true)}
-                onMouseLeave={() => setIsDraggable(false)}
-                style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '4px', marginRight: '12px', color: '#94a3b8' }}
-                onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
-                onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
-            >
-                <GripVertical size={20} />
-            </div>
-            
-            {isEditingTitle ? (
-                <input
-                    ref={inputRef}
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    onBlur={handleTitleSubmit}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleTitleSubmit();
-                    }}
-                    style={{
-                        fontSize: '14px',
-                        fontWeight: 700,
-                        color: '#0f172a',
-                        margin: 0,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        border: '1px solid #4f46e5',
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        outline: 'none',
-                        width: '200px'
-                    }}
-                />
-            ) : (
-                <h3 
-                    onClick={() => setIsEditingTitle(true)}
-                    style={{ 
-                        fontSize: '14px', 
-                        fontWeight: 700, 
-                        color: '#0f172a', 
-                        margin: 0, 
-                        textTransform: 'uppercase', 
-                        letterSpacing: '0.5px',
-                        cursor: 'text',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        border: '1px solid transparent'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                    {item.content.title || 'MAIN SECTION'}
-                </h3>
-            )}
-
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button 
-                    onClick={handlePublishSection}
-                    disabled={isPublishing || (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0}
-                    title="Publish this section as a new standalone dashboard"
-                    style={{ 
-                        padding: '8px 12px', 
-                        borderRadius: '8px', 
-                        border: 'none', 
-                        background: isPublishing ? '#e0e7ff' : (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0 ? '#e2e8f0' : '#4f46e5', 
-                        cursor: isPublishing || (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0 ? 'not-allowed' : 'pointer', 
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        opacity: isPublishing || (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) === 0 ? 0.6 : 1,
-                        transition: 'all 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                        if (!isPublishing && (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) > 0) {
-                            e.currentTarget.style.backgroundColor = '#4338ca';
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                            e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (!isPublishing && (item.content.items?.filter((i: CanvasItem) => i.type === 'insight').length || 0) > 0) {
-                            e.currentTarget.style.backgroundColor = '#4f46e5';
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = 'none';
-                        }
-                    }}
-                >
-                    <Upload size={16} />
-                    {isPublishing ? 'Publishing...' : 'Publish'}
-                </button>
-                <button 
-                    onClick={() => {
-                        const newExpanded = !isExpanded;
-                        setIsExpanded(newExpanded);
-                        onUpdate(index, { height: newExpanded ? '600px' : '300px' }, parentId);
-                    }}
-                    style={{ padding: '8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                    <Maximize2 size={18} />
-                </button>
-                <button 
-                    onClick={() => onRemove(index, parentId)}
-                    style={{ padding: '8px', borderRadius: '8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                    <Trash2 size={18} />
-                </button>
-            </div>
-        </div>
-
         <div 
             ref={contentRef}
             onDragOver={(e) => {
@@ -1272,6 +1160,7 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
 
 export const CreateDashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const editDashboardId = searchParams.get('edit');
   
@@ -1279,10 +1168,13 @@ export const CreateDashboardPage: React.FC = () => {
   const [showTextMenu, setShowTextMenu] = useState(false);
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+  const [isEditingHeaderTitle, setIsEditingHeaderTitle] = useState(false);
+  const [headerTitle, setHeaderTitle] = useState('MAIN SECTION');
   
   const dragItem = useRef<DragItemInfo | null>(null);
   const dragOverItem = useRef<DragItemInfo | null>(null);
   const textMenuRef = useRef<HTMLDivElement>(null);
+  const headerTitleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1293,6 +1185,22 @@ export const CreateDashboardPage: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Auto-create section on mount (only for new dashboards, not editing)
+  useEffect(() => {
+    if (!editDashboardId && canvasItems.length === 0) {
+      setCanvasItems([{
+        id: 'main-section',
+        type: 'section',
+        content: {
+          title: 'MAIN SECTION',
+          items: []
+        },
+        width: '100%',
+        height: '300px'
+      }]);
+    }
+  }, [editDashboardId]);
 
   // Load dashboard for editing
   useEffect(() => {
@@ -1394,8 +1302,10 @@ export const CreateDashboardPage: React.FC = () => {
 
   const handleRemoveItem = (index: number, parentId: string = 'root') => {
     const newItems = JSON.parse(JSON.stringify(canvasItems));
+    let removedItemType: string | null = null;
     
     if (parentId === 'root') {
+        removedItemType = newItems[index]?.type;
         newItems.splice(index, 1);
     } else {
         const section = newItems.find((i: CanvasItem) => i.id === parentId);
@@ -1405,6 +1315,22 @@ export const CreateDashboardPage: React.FC = () => {
     }
     
     setCanvasItems(newItems);
+    
+    // If a section was removed, auto-create a new one
+    if (removedItemType === 'section') {
+      setTimeout(() => {
+        setCanvasItems(prev => [...prev, {
+          id: 'main-section',
+          type: 'section',
+          content: {
+            title: 'MAIN SECTION',
+            items: []
+          },
+          width: '100%',
+          height: '300px'
+        }]);
+      }, 100);
+    }
   };
 
   const handleTextAdd = (subtype: 'header' | 'body') => {
@@ -1422,11 +1348,19 @@ export const CreateDashboardPage: React.FC = () => {
   };
 
   const handleSectionAdd = () => {
+    // Only allow one section at a time
+    const existingSection = canvasItems.find(item => item.type === 'section');
+    if (existingSection) {
+      alert('You can only create one section at a time. Publish the current section before creating a new one.');
+      return;
+    }
+    
     setCanvasItems(prev => [...prev, {
       id: Math.random().toString(36).substr(2, 9),
       type: 'section',
       content: {
-        title: 'MAIN SECTION'
+        title: 'MAIN SECTION',
+        items: []
       },
       width: '100%',
       height: '300px'
@@ -1438,15 +1372,29 @@ export const CreateDashboardPage: React.FC = () => {
       const dashboard = await dashboardService.getDashboard(insightSummary.id);
       if (dashboard && dashboard.charts && dashboard.charts.length > 0) {
         const chart = dashboard.charts[0];
-        setCanvasItems(prev => [...prev, {
+        const newInsight = {
           id: Math.random().toString(36).substr(2, 9),
-          type: 'insight',
+          type: 'insight' as const,
           content: {
             dashboardId: dashboard.id,
             chart: chart,
-            title: dashboard.name // Use dashboard name as title for the insight card
+            title: dashboard.name
           }
-        }]);
+        };
+        
+        // Find the section and add insight to it
+        setCanvasItems(prev => prev.map(item => {
+          if (item.type === 'section') {
+            return {
+              ...item,
+              content: {
+                ...item.content,
+                items: [...(item.content.items || []), newInsight]
+              }
+            };
+          }
+          return item;
+        }));
       }
     } catch (error) {
       console.error("Failed to load insight details", error);
@@ -1648,6 +1596,74 @@ export const CreateDashboardPage: React.FC = () => {
           >
             <ArrowLeft size={20} color="#64748b" />
           </button>
+          
+          {/* Dashboard Title */}
+          {canvasItems.length > 0 && canvasItems[0].type === 'section' && (
+            isEditingHeaderTitle ? (
+              <input
+                ref={headerTitleInputRef}
+                value={headerTitle}
+                onChange={(e) => setHeaderTitle(e.target.value)}
+                onBlur={() => {
+                  setIsEditingHeaderTitle(false);
+                  // Update the section title
+                  setCanvasItems(prev => prev.map((item, idx) => 
+                    idx === 0 && item.type === 'section' 
+                      ? { ...item, content: { ...item.content, title: headerTitle } }
+                      : item
+                  ));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setIsEditingHeaderTitle(false);
+                    setCanvasItems(prev => prev.map((item, idx) => 
+                      idx === 0 && item.type === 'section' 
+                        ? { ...item, content: { ...item.content, title: headerTitle } }
+                        : item
+                    ));
+                  }
+                }}
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  margin: 0,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  border: '1px solid #4f46e5',
+                  borderRadius: '4px',
+                  padding: '6px 12px',
+                  outline: 'none',
+                  width: '250px',
+                  backgroundColor: 'white'
+                }}
+                autoFocus
+              />
+            ) : (
+              <h1 
+                onClick={() => {
+                  setHeaderTitle(canvasItems[0].content.title || 'MAIN SECTION');
+                  setIsEditingHeaderTitle(true);
+                }}
+                style={{ 
+                  fontSize: '16px', 
+                  fontWeight: 700, 
+                  color: '#0f172a', 
+                  margin: 0, 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.5px',
+                  cursor: 'pointer',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                {canvasItems[0].content.title || 'MAIN SECTION'}
+              </h1>
+            )
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1738,35 +1754,295 @@ export const CreateDashboardPage: React.FC = () => {
                     </div>
                 )}
             </div>
-            <button className="toolbar-btn" onClick={handleSectionAdd}>
-              <LayoutTemplate size={16} />
-              <span>Section</span>
-            </button>
           </div>
+          
+          {/* Update Button - only show in edit mode */}
+          {editDashboardId && canvasItems.length > 0 && canvasItems[0].type === 'section' && (() => {
+            const section = canvasItems[0];
+            const sectionItems = section.type === 'section' ? (section.content.items || []) : [];
+            const insights = sectionItems.filter((i: CanvasItem) => i.type === 'insight');
+            const hasInsights = insights.length > 0;
+            
+            return (
+              <button 
+                disabled={!hasInsights}
+                onClick={async () => {
+                  if (!hasInsights) {
+                    return;
+                  }
+                  
+                  try {
+                    setIsLoadingDashboard(true);
+                    const containerWidth = 1200;
+                    let currentY = 0;
+                    let currentRowX = 0;
+                    let currentRowHeight = 0;
+                    
+                    const charts = insights.map((insight: CanvasItem) => {
+                      const { dashboardId, chart } = insight.content;
+                      let gridWidth = 12;
+                      if (insight.width) {
+                        const widthStr = insight.width;
+                        if (widthStr.includes('%')) {
+                          const percentage = parseInt(widthStr);
+                          gridWidth = Math.round((percentage / 100) * 12);
+                        } else if (widthStr.includes('px')) {
+                          const pixels = parseInt(widthStr);
+                          const percentage = (pixels / containerWidth) * 100;
+                          gridWidth = Math.round((percentage / 100) * 12);
+                        } else if (widthStr.includes('calc')) {
+                          if (widthStr.includes('50%')) gridWidth = 6;
+                          else if (widthStr.includes('33%')) gridWidth = 4;
+                          else if (widthStr.includes('66%')) gridWidth = 8;
+                          else if (widthStr.includes('25%')) gridWidth = 3;
+                          else if (widthStr.includes('75%')) gridWidth = 9;
+                        }
+                      }
+                      
+                      gridWidth = Math.max(1, Math.min(12, gridWidth));
+                      
+                      let gridHeight = 5;
+                      if (insight.height) {
+                        const heightStr = insight.height;
+                        if (heightStr.includes('px')) {
+                          const pixels = parseInt(heightStr);
+                          gridHeight = Math.max(4, Math.round((pixels + 50) / 100));
+                        }
+                      }
+                      
+                      let posX = currentRowX;
+                      let posY = currentY;
+                      
+                      if (currentRowX + gridWidth > 12) {
+                        currentY += currentRowHeight;
+                        currentRowX = 0;
+                        currentRowHeight = 0;
+                        posX = 0;
+                        posY = currentY;
+                      }
+                      
+                      currentRowX += gridWidth;
+                      currentRowHeight = Math.max(currentRowHeight, gridHeight);
+                      
+                      if (gridWidth === 12) {
+                        currentY += gridHeight;
+                        currentRowX = 0;
+                        currentRowHeight = 0;
+                      }
+                      
+                      return {
+                        dataset_id: chart.dataset_id,
+                        chart_type: chart.chart_type,
+                        x_column: chart.x_column || null,
+                        y_column: chart.y_column || null,
+                        title: chart.title || insight.content.title,
+                        config: chart.config || {},
+                        position_x: posX,
+                        position_y: posY,
+                        width: gridWidth,
+                        height: gridHeight
+                      };
+                    });
 
-          {canvasItems.filter(item => item.type === 'insight').length > 0 && (
-            <button 
-              onClick={handleSaveDashboard}
-              disabled={isLoadingDashboard}
+                    // Update existing dashboard - delete old charts and create new ones
+                    const dashboard = await dashboardService.getDashboard(editDashboardId);
+                    
+                    // Delete all existing charts
+                    for (const chart of dashboard.charts) {
+                      await dashboardService.deleteChart(editDashboardId, chart.id);
+                    }
+                    
+                    // Update dashboard description (keep existing name)
+                    await dashboardService.updateDashboard(editDashboardId, {
+                      description: `Updated with ${charts.length} chart(s)`
+                    });
+                    
+                    // Add new charts
+                    for (const chart of charts) {
+                      await dashboardService.addChart(editDashboardId, chart);
+                    }
+                    
+                    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+                    alert('Dashboard updated successfully!');
+                    navigate(`/dashboards/${editDashboardId}`);
+                  } catch (error: any) {
+                    console.error('Failed to update dashboard:', error);
+                    alert(`Failed to update dashboard: ${error.response?.data?.detail || error.message}`);
+                  } finally {
+                    setIsLoadingDashboard(false);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  backgroundColor: hasInsights ? '#10b981' : '#94a3b8',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: 'white',
+                  cursor: hasInsights ? 'pointer' : 'not-allowed',
+                  opacity: hasInsights ? 1 : 0.6
+                }}
+                onMouseEnter={(e) => {
+                  if (hasInsights) e.currentTarget.style.backgroundColor = '#059669';
+                }}
+                onMouseLeave={(e) => {
+                  if (hasInsights) e.currentTarget.style.backgroundColor = '#10b981';
+                }}
+              >
+                <Upload size={16} />
+                Update Dashboard
+              </button>
+            );
+          })()}
+          
+          {/* Publish Button - only show in create mode */}
+          {!editDashboardId && canvasItems.length > 0 && canvasItems[0].type === 'section' && (() => {
+            const section = canvasItems[0];
+            const sectionItems = section.type === 'section' ? (section.content.items || []) : [];
+            const insights = sectionItems.filter((i: CanvasItem) => i.type === 'insight');
+            const hasInsights = insights.length > 0;
+            
+            return (
+              <button 
+                disabled={!hasInsights}
+                onClick={async () => {
+                  if (!hasInsights) {
+                    return;
+                  }
+                  
+                  if (section.type === 'section') {
+                    const sectionItems = section.content.items || [];
+                    const insights = sectionItems.filter((i: CanvasItem) => i.type === 'insight');
+
+                  try {
+                    const containerWidth = 1200;
+                    let currentY = 0;
+                    let currentRowX = 0;
+                    let currentRowHeight = 0;
+                    
+                    const charts = insights.map((insight: CanvasItem) => {
+                      const { dashboardId, chart } = insight.content;
+                      let gridWidth = 12;
+                      if (insight.width) {
+                        const widthStr = insight.width;
+                        if (widthStr.includes('%')) {
+                          const percentage = parseInt(widthStr);
+                          gridWidth = Math.round((percentage / 100) * 12);
+                        } else if (widthStr.includes('px')) {
+                          const pixels = parseInt(widthStr);
+                          const percentage = (pixels / containerWidth) * 100;
+                          gridWidth = Math.round((percentage / 100) * 12);
+                        } else if (widthStr.includes('calc')) {
+                          if (widthStr.includes('50%')) gridWidth = 6;
+                          else if (widthStr.includes('33%')) gridWidth = 4;
+                          else if (widthStr.includes('66%')) gridWidth = 8;
+                          else if (widthStr.includes('25%')) gridWidth = 3;
+                          else if (widthStr.includes('75%')) gridWidth = 9;
+                        }
+                      }
+                      
+                      gridWidth = Math.max(1, Math.min(12, gridWidth));
+                      
+                      let gridHeight = 5;
+                      if (insight.height) {
+                        const heightStr = insight.height;
+                        if (heightStr.includes('px')) {
+                          const pixels = parseInt(heightStr);
+                          gridHeight = Math.max(4, Math.round((pixels + 50) / 100));
+                        }
+                      }
+                      
+                      let posX = currentRowX;
+                      let posY = currentY;
+                      
+                      if (currentRowX + gridWidth > 12) {
+                        currentY += currentRowHeight;
+                        currentRowX = 0;
+                        currentRowHeight = 0;
+                        posX = 0;
+                        posY = currentY;
+                      }
+                      
+                      currentRowX += gridWidth;
+                      currentRowHeight = Math.max(currentRowHeight, gridHeight);
+                      
+                      if (gridWidth === 12) {
+                        currentY += gridHeight;
+                        currentRowX = 0;
+                        currentRowHeight = 0;
+                      }
+                      
+                      return {
+                        dataset_id: chart.dataset_id,
+                        chart_type: chart.chart_type,
+                        x_column: chart.x_column || null,
+                        y_column: chart.y_column || null,
+                        title: chart.title || insight.content.title,
+                        config: chart.config || {},
+                        position_x: posX,
+                        position_y: posY,
+                        width: gridWidth,
+                        height: gridHeight
+                      };
+                    });
+
+                    const dashboardPayload = {
+                      name: section.content.title || 'MAIN SECTION',
+                      description: `Created with ${charts.length} chart(s)`,
+                      charts: charts
+                    };
+
+                    const createdDashboard = await dashboardService.createDashboard(dashboardPayload);
+                    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+                    alert(`Dashboard "${section.content.title}" published successfully! A new section has been created.`);
+                    
+                    // Remove section and auto-create new one
+                    setCanvasItems([{
+                      id: 'main-section',
+                      type: 'section',
+                      content: {
+                        title: 'MAIN SECTION',
+                        items: []
+                      },
+                      width: '100%',
+                      height: '300px'
+                    }]);
+                  } catch (error: any) {
+                    console.error('Failed to publish:', error);
+                    alert(`Failed to publish dashboard: ${error.response?.data?.detail || error.message}`);
+                  }
+                }
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 padding: '8px 16px',
-                backgroundColor: isLoadingDashboard ? '#a5b4fc' : '#4f46e5',
+                backgroundColor: hasInsights ? '#4f46e5' : '#94a3b8',
                 border: 'none',
                 borderRadius: '8px',
                 fontSize: '14px',
                 fontWeight: 600,
                 color: 'white',
-                cursor: isLoadingDashboard ? 'not-allowed' : 'pointer',
-                opacity: isLoadingDashboard ? 0.6 : 1
+                cursor: hasInsights ? 'pointer' : 'not-allowed',
+                opacity: hasInsights ? 1 : 0.6
+              }}
+              onMouseEnter={(e) => {
+                if (hasInsights) e.currentTarget.style.backgroundColor = '#4338ca';
+              }}
+              onMouseLeave={(e) => {
+                if (hasInsights) e.currentTarget.style.backgroundColor = '#4f46e5';
               }}
             >
-              <Send size={16} />
-              {editDashboardId ? 'UPDATE' : 'PUBLISH'}
+              <Upload size={16} />
+              Publish
             </button>
-          )}
+            );
+          })()}
         </div>
       </header>
 
@@ -1788,9 +2064,10 @@ export const CreateDashboardPage: React.FC = () => {
           }}>
               <div style={{ textAlign: 'center', color: '#cbd5e1' }}>
                   <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
-                      <BarChart3 size={48} color="#4f46e5" strokeWidth={1.5} />
+                      <LayoutTemplate size={48} color="#4f46e5" strokeWidth={1.5} />
                   </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: 800, fontStyle: 'italic', letterSpacing: '-0.5px' }}>Start Building Your Dashboard</h2>
+                  <h2 style={{ fontSize: '24px', fontWeight: 800, fontStyle: 'italic', letterSpacing: '-0.5px', color: '#0f172a' }}>Start by Creating a Section</h2>
+                  <p style={{ fontSize: '14px', color: '#64748b', marginTop: '8px' }}>Click the "Section" button above, then add insights to build your dashboard</p>
               </div>
           </div>
         ) : (

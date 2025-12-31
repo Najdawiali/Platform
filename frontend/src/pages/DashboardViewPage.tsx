@@ -1912,7 +1912,7 @@ const DashboardViewPage: React.FC = () => {
                   Loading chart data...
                 </div>
               ) : (
-                <div style={{ padding: '20px', paddingBottom: '44px', minHeight: '400px' }}>
+                <div style={{ padding: '20px', paddingBottom: '44px', height: '500px' }}>
                   {renderChart(sqlInsight.chart, chartData)}
                 </div>
               )}
