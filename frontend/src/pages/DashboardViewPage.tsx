@@ -2567,9 +2567,7 @@ const DashboardViewPage: React.FC = () => {
             {/* Edit Button */}
             <button
               onClick={() => {
-                // Navigate to visualize page with dashboard data for editing
-                const datasetIds = [...new Set(dashboard.charts.map(c => c.dataset_id))];
-                navigate(`/visualize?datasets=${datasetIds.join(',')}&edit=${dashboard.id}`);
+                navigate(`/dashboards/new?edit=${dashboard.id}`);
               }}
               style={{
                 padding: '10px 20px',
