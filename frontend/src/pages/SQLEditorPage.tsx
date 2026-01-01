@@ -1592,6 +1592,49 @@ export const SQLEditorPage: React.FC = () => {
             >
               {isExecuting ? 'Running...' : '▶ Run Query'}
             </button>
+            
+            <button
+              onClick={async () => {
+                if (!sqlQuery.trim()) {
+                  alert('Please enter a SQL query to save');
+                  return;
+                }
+                
+                const queryName = prompt('Enter a name for this query:', insightName || 'Untitled Query');
+                if (!queryName) return;
+                
+                const queryDescription = prompt('Enter a description (optional):', '');
+                
+                try {
+                  await savedQueryService.createSavedQuery({
+                    name: queryName,
+                    description: queryDescription || undefined,
+                    query: sqlQuery
+                  });
+                  alert('Query saved successfully!');
+                  // Refresh saved queries list
+                  window.location.reload();
+                } catch (error: any) {
+                  alert(`Failed to save query: ${error.response?.data?.detail || error.message}`);
+                }
+              }}
+              disabled={!sqlQuery.trim()}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: sqlQuery.trim() ? '#10b981' : '#e2e8f0',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: sqlQuery.trim() ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              💾 Save Query
+            </button>
           </div>
         </div>
 
