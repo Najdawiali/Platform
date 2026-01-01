@@ -1856,24 +1856,37 @@ export const CreateDashboardPage: React.FC = () => {
                     });
 
                     // Update existing dashboard - delete old charts and create new ones
+                    console.log('[UPDATE] Starting dashboard update for:', editDashboardId);
                     const dashboard = await dashboardService.getDashboard(editDashboardId);
+                    console.log('[UPDATE] Current dashboard has', dashboard.charts.length, 'charts');
                     
                     // Delete all existing charts
                     for (const chart of dashboard.charts) {
+                      console.log('[UPDATE] Deleting chart:', chart.id);
                       await dashboardService.deleteChart(editDashboardId, chart.id);
                     }
+                    console.log('[UPDATE] All old charts deleted');
                     
                     // Update dashboard description (keep existing name)
                     await dashboardService.updateDashboard(editDashboardId, {
                       description: `Updated with ${charts.length} chart(s)`
                     });
+                    console.log('[UPDATE] Dashboard metadata updated');
                     
                     // Add new charts
                     for (const chart of charts) {
+                      console.log('[UPDATE] Adding new chart');
                       await dashboardService.addChart(editDashboardId, chart);
                     }
+                    console.log('[UPDATE] All new charts added');
                     
-                    queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+                    // Remove stale cache data completely
+                    console.log('[UPDATE] Removing cached data');
+                    queryClient.removeQueries({ queryKey: ['dashboard', editDashboardId] });
+                    queryClient.removeQueries({ queryKey: ['dashboard-charts-data', editDashboardId] });
+                    await queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+                    
+                    console.log('[UPDATE] Navigating to dashboard view');
                     navigate(`/dashboards/${editDashboardId}`);
                   } catch (error: any) {
                     console.error('Failed to update dashboard:', error);

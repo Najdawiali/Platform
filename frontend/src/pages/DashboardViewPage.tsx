@@ -352,11 +352,10 @@ const DashboardViewPage: React.FC = () => {
   });
 
   const sqlInsight = useMemo(() => {
-    // Only show insight view if:
-    // 1. Dashboard has exactly 1 chart (single-chart insight)
-    // 2. Chart has SQL query in config
-    // 3. Dashboard is_insight flag is true (if available)
-    if (!dashboard || dashboard.charts?.length !== 1) return null;
+    // Only show insight view if the dashboard is marked as an insight
+    // Regular dashboards (even with 1 chart) should use dashboard view
+    if (!dashboard || !dashboard.is_insight) return null;
+    if (dashboard.charts?.length !== 1) return null;
     
     const chart = dashboard.charts[0];
     const sql = chart?.config?.sql_query;
@@ -365,7 +364,8 @@ const DashboardViewPage: React.FC = () => {
     console.log('Detected SQL Insight:', { 
       dashboardId: dashboard.id, 
       chartCount: dashboard.charts.length,
-      hasSqlQuery: !!sql 
+      hasSqlQuery: !!sql,
+      isInsight: dashboard.is_insight
     });
     
     return { dashboard, chart, sql: String(sql) };
