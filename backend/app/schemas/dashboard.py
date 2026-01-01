@@ -67,6 +67,7 @@ class Dashboard(DashboardBase):
     """Schema for dashboard response"""
     id: str
     user_id: str
+    is_insight: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
     charts: List[DashboardChart] = []
