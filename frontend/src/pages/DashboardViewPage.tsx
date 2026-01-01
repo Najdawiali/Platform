@@ -1917,6 +1917,21 @@ const DashboardViewPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Info Note */}
+              <div style={{
+                padding: '12px 20px',
+                backgroundColor: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                fontSize: '12px',
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '14px' }}>ℹ️</span>
+                <span>The chart applies transformations (aggregations, filters, sorting) to the source data shown below</span>
+              </div>
+
               {/* Tabs */}
               <div style={{
                 borderTop: '1px solid #e2e8f0',
@@ -1927,9 +1942,9 @@ const DashboardViewPage: React.FC = () => {
                 gap: '0px',
               }}>
                 {([
-                  { key: 'config', label: 'Configuration', icon: '⚙️' },
-                  { key: 'query', label: 'Query', icon: '</>' },
-                  { key: 'preview', label: 'Data Preview', icon: '📋' },
+                  { key: 'config', label: 'Chart Configuration', icon: '⚙️' },
+                  { key: 'query', label: 'Source SQL Query', icon: '</>' },
+                  { key: 'preview', label: 'Source Data', icon: '📋' },
                 ] as const).map((t) => (
                   <button
                     key={t.key}
@@ -2463,9 +2478,21 @@ const DashboardViewPage: React.FC = () => {
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
-                        Sample Data ({previewQuery.data?.rows.length || 0} rows)
+                        Sample Data ({previewQuery.data?.rows.length || 0} rows shown)
                       </div>
                       <button
+                        onClick={() => {
+                          // Trigger CSV export download
+                          if (sqlInsight?.chart?.dataset_id) {
+                            const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+                            const token = localStorage.getItem('access_token');
+                            const chartName = encodeURIComponent(sqlInsight.dashboard.name);
+                            const exportUrl = `${apiBaseUrl}/api/datasets/${sqlInsight.chart.dataset_id}/export?token=${token}&filename=${chartName}`;
+                            
+                            // Trigger download
+                            window.location.href = exportUrl;
+                          }
+                        }}
                         style={{
                           padding: '6px 12px',
                           border: '1px solid #e2e8f0',
@@ -2479,8 +2506,10 @@ const DashboardViewPage: React.FC = () => {
                           alignItems: 'center',
                           gap: '4px',
                         }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                       >
-                        📥 Export
+                        📥 Export Source Data (CSV)
                       </button>
                     </div>
                     {previewQuery.isLoading ? (

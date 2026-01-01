@@ -1,7 +1,11 @@
 # backend/app/api/datasets.py
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import pyarrow.parquet as pq
+import io
+import csv
 
 from ..database import get_db
 from ..models.user import User
@@ -17,6 +21,7 @@ from ..schemas.dataset import (
 from ..services.dataset_service import DatasetService
 from ..services.connection_service import ConnectionService
 from .auth import get_current_user
+from ..utils.security import decode_access_token
 
 router = APIRouter()
 
@@ -388,3 +393,132 @@ def query_dataset(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+@router.get("/{dataset_id}/export")
+def export_dataset(
+        dataset_id: str,
+        token: Optional[str] = Query(None),
+        filename: Optional[str] = Query(None),
+        db: Session = Depends(get_db)
+):
+    """
+    Export full dataset as CSV (streaming for memory efficiency)
+    Token can be passed as query parameter for download links
+    """
+    import os
+    
+    # Authenticate using token from query parameter
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token required for export"
+        )
+    
+    # Decode and verify token
+    payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user from token
+    email = payload.get("sub")
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload"
+        )
+    
+    current_user = db.query(User).filter(User.email == email).first()
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    dataset = DatasetService.get_dataset_by_id(dataset_id, current_user, db)
+
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found"
+        )
+
+    # Get parquet file path (check both file_path and schema_info)
+    filepath = dataset.file_path
+    
+    # For SQL query datasets, the parquet path is in schema_info
+    if not filepath and dataset.schema_info:
+        filepath = dataset.schema_info.get("parquet_path")
+    
+    if not filepath:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dataset has no parquet file"
+        )
+    
+    # Check if file exists
+    if not os.path.exists(filepath):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Parquet file not found at {filepath}"
+        )
+
+    def stream_csv():
+        """Generator function that streams CSV data in chunks"""
+        try:
+            # Open parquet file (doesn't load into memory)
+            parquet_file = pq.ParquetFile(filepath)
+            
+            # Get column names from schema
+            columns = parquet_file.schema.names
+            
+            # Create CSV writer to string buffer
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow(columns)
+            yield output.getvalue()
+            output.truncate(0)
+            output.seek(0)
+            
+            # Stream data in batches
+            for batch in parquet_file.iter_batches(batch_size=1000):
+                # Convert batch to pandas for easy CSV conversion
+                df = batch.to_pandas()
+                
+                # Write rows to CSV
+                for _, row in df.iterrows():
+                    writer.writerow(row.values)
+                
+                # Yield the accumulated CSV text
+                yield output.getvalue()
+                
+                # Clear buffer for next batch
+                output.truncate(0)
+                output.seek(0)
+                
+        except Exception as e:
+            # If error occurs during streaming, log it
+            import traceback
+            print(f"Error during CSV export: {str(e)}")
+            print(traceback.format_exc())
+            raise
+
+    # Generate filename from provided name or dataset name
+    if filename:
+        safe_name = "".join(c for c in filename if c.isalnum() or c in (' ', '_', '-')).strip()
+    else:
+        safe_name = "".join(c for c in dataset.name if c.isalnum() or c in (' ', '_', '-')).strip()
+    csv_filename = f"{safe_name or 'dataset'}.csv"
+
+    return StreamingResponse(
+        stream_csv(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={csv_filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
