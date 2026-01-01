@@ -1221,7 +1221,18 @@ export const CreateDashboardPage: React.FC = () => {
             height: `${chart.height * 100}px`,
             marginLeft: `${(chart.position_x / 12) * 100}%`
           }));
-          setCanvasItems(items);
+          
+          // Wrap items in a section for consistency
+          setCanvasItems([{
+            id: 'main-section',
+            type: 'section',
+            content: {
+              title: dashboard.name,
+              items: items
+            },
+            width: '100%',
+            height: '300px'
+          }]);
           setIsLoadingDashboard(false);
         })
         .catch(err => {
@@ -1863,7 +1874,6 @@ export const CreateDashboardPage: React.FC = () => {
                     }
                     
                     queryClient.invalidateQueries({ queryKey: ['dashboards'] });
-                    alert('Dashboard updated successfully!');
                     navigate(`/dashboards/${editDashboardId}`);
                   } catch (error: any) {
                     console.error('Failed to update dashboard:', error);
