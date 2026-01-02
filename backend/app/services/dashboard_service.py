@@ -823,6 +823,64 @@ class DashboardService:
 
                     is_aggregated = True
                     aggregation_strategy = "xy_groupby"
+                elif chart.chart_type == 'heatmap':
+                    # Heatmap aggregation: group by X and Y, aggregate value column
+                    x_col = cfg.get('xAxis') or chart.x_column
+                    y_col = cfg.get('yAxis') or chart.y_column
+                    value_col = cfg.get('heatmapValueColumn') or cfg.get('valueColumn')
+                    heatmap_agg = cfg.get('heatmapAggregation') or cfg.get('aggregation') or 'sum'
+                    
+                    if not x_col or not y_col or not value_col:
+                        # Fallback to raw data if columns not configured
+                        quoted = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
+                        query = f"""
+                        SELECT {quoted}
+                        FROM parquet_scan('{parquet_path}')
+                        {limit_clause}
+                        {offset_clause}
+                        """
+                    else:
+                        # Validate identifiers
+                        x_col = _validate_ident(str(x_col))
+                        y_col = _validate_ident(str(y_col))
+                        value_col = _validate_ident(str(value_col))
+                        
+                        # Normalize aggregation function
+                        agg_func = str(heatmap_agg).strip().lower()
+                        if agg_func not in ('sum', 'avg', 'min', 'max', 'count'):
+                            agg_func = 'sum'
+                        
+                        # Build aggregation query - keep original column name for value
+                        if agg_func == 'count':
+                            metric_expr = f'COUNT(*) AS "{value_col}"'
+                        else:
+                            metric_expr = f'{agg_func.upper()}("{value_col}") AS "{value_col}"'
+                        
+                        cte = f"""
+                        WITH agg AS (
+                            SELECT 
+                                "{x_col}",
+                                "{y_col}",
+                                {metric_expr}
+                            FROM parquet_scan('{parquet_path}')
+                            WHERE "{x_col}" IS NOT NULL AND "{y_col}" IS NOT NULL
+                            GROUP BY "{x_col}", "{y_col}"
+                        )
+                        """
+                        
+                        total_result_rows = con.execute(f"{cte} SELECT COUNT(*) FROM agg").fetchone()[0]
+                        
+                        query = f"""
+                        {cte}
+                        SELECT "{x_col}", "{y_col}", "{value_col}"
+                        FROM agg
+                        ORDER BY "{x_col}", "{y_col}"
+                        {limit_clause}
+                        {offset_clause}
+                        """
+                        
+                        is_aggregated = True
+                        aggregation_strategy = "heatmap_groupby"
                 else:
                     quoted = ", ".join([f'\"{c}\"' for c in cols]) if cols else "*"
                     select_clause = quoted

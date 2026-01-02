@@ -1958,7 +1958,7 @@ const DashboardViewPage: React.FC = () => {
                 padding: '20px 20px 16px',
               }}>
                 <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', letterSpacing: '0.05em' }}>
-                  Visualization
+                  {sqlInsight.chart.title || 'Visualization'}
                 </h3>
                 <div style={{ fontSize: '12px', color: '#94a3b8' }}>
                   {sqlInsight.chart.chart_type.charAt(0).toUpperCase() + sqlInsight.chart.chart_type.slice(1)} Chart
@@ -2052,6 +2052,7 @@ const DashboardViewPage: React.FC = () => {
                       const isScatter = sqlInsight.chart.chart_type === 'scatter';
                       const isRadar = sqlInsight.chart.chart_type === 'radar';
                       const isXY = sqlInsight.chart.chart_type === 'bar' || sqlInsight.chart.chart_type === 'line' || sqlInsight.chart.chart_type === 'area';
+                      const isHeatmap = sqlInsight.chart.chart_type === 'heatmap';
 
                       const scatterColorBy = (typeof cfg.scatterColorBy === 'string' && cfg.scatterColorBy)
                         ? cfg.scatterColorBy
@@ -2115,6 +2116,22 @@ const DashboardViewPage: React.FC = () => {
                         }
                         return parts.join(', ');
                       })();
+
+                      // Heatmap configuration
+                      const heatmapXAxis = typeof cfg.xAxis === 'string' ? cfg.xAxis : (sqlInsight.chart.x_column || '');
+                      const heatmapYAxis = typeof cfg.yAxis === 'string' ? cfg.yAxis : (sqlInsight.chart.y_column || '');
+                      const heatmapValueColumn = (typeof cfg.heatmapValueColumn === 'string' && cfg.heatmapValueColumn) 
+                        ? cfg.heatmapValueColumn 
+                        : (typeof cfg.valueColumn === 'string' ? cfg.valueColumn : '');
+                      const heatmapAggregation = typeof cfg.heatmapAggregation === 'string' 
+                        ? cfg.heatmapAggregation 
+                        : (typeof cfg.aggregation === 'string' ? cfg.aggregation : 'sum');
+                      const heatmapShowValues = typeof cfg.heatmapShowValues === 'boolean' ? cfg.heatmapShowValues : true;
+                      const heatmapShowGrid = typeof cfg.heatmapShowGrid === 'boolean' ? cfg.heatmapShowGrid : true;
+                      const heatmapCellBorderWidth = typeof cfg.heatmapCellBorderWidth === 'number' ? cfg.heatmapCellBorderWidth : 1;
+                      const heatmapColorScheme = Array.isArray(cfg.heatmapColorScheme) && cfg.heatmapColorScheme.length > 0
+                        ? `Custom (${cfg.heatmapColorScheme.length} colors)`
+                        : 'Default';
 
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
@@ -2270,7 +2287,7 @@ const DashboardViewPage: React.FC = () => {
                               ) : null}
 
                               {/* X-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
+                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>X-Axis</div>
                                   <div style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -2280,7 +2297,7 @@ const DashboardViewPage: React.FC = () => {
                               )}
 
                               {/* Y-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
+                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Y-Axis</div>
                                   <div style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -2460,6 +2477,44 @@ const DashboardViewPage: React.FC = () => {
                                   <div>
                                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Fill opacity</div>
                                     <div style={{ fontSize: '14px', color: '#0f172a' }}>{radarFillOpacity.toFixed(2)}</div>
+                                  </div>
+                                </>
+                              ) : null}
+
+                              {/* Heatmap settings */}
+                              {isHeatmap ? (
+                                <>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>X-Axis</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapXAxis || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Y-Axis</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapYAxis || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Value Column</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapValueColumn || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Aggregation</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapAggregation}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Values</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapShowValues ? 'On' : 'Off'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Grid</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapShowGrid ? 'On' : 'Off'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Cell Border Width</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapCellBorderWidth}px</div>
+                                  </div>
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Color Scheme</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapColorScheme}</div>
                                   </div>
                                 </>
                               ) : null}

@@ -11,7 +11,11 @@ import {
   ScatterChart, 
   Gauge, 
   TrendingUp,
-  Activity
+  Activity,
+  Flame,
+  Filter,
+  Radar as RadarIcon,
+  TreePine
 } from 'lucide-react';
 
 interface LibraryModalProps {
@@ -39,6 +43,10 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({ isOpen, onClose, onS
       case 'scatter': return <ScatterChart size={48} className="text-indigo-500" />;
       case 'gauge': return <Gauge size={48} className="text-indigo-500" />;
       case 'kpi': return <TrendingUp size={48} className="text-indigo-500" />;
+      case 'heatmap': return <Flame size={48} className="text-indigo-500" />;
+      case 'funnel': return <Filter size={48} className="text-indigo-500" />;
+      case 'radar': return <RadarIcon size={48} className="text-indigo-500" />;
+      case 'treemap': return <TreePine size={48} className="text-indigo-500" />;
       default: return <Activity size={48} className="text-indigo-500" />;
     }
   };

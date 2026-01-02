@@ -727,7 +727,9 @@ export const SavedChartRenderer: React.FC<SavedChartRendererProps> = ({ dashboar
   if (chart.chart_type === 'heatmap') {
     const xCol: string | undefined = chart.x_column || (typeof cfg.xAxis === 'string' ? cfg.xAxis : undefined);
     const yCol: string | undefined = chart.y_column || (typeof cfg.yAxis === 'string' ? cfg.yAxis : undefined);
-    const valueCol: string | undefined = typeof cfg.valueColumn === 'string' ? cfg.valueColumn : undefined;
+    const valueCol: string | undefined = (typeof cfg.heatmapValueColumn === 'string' && cfg.heatmapValueColumn) 
+      ? cfg.heatmapValueColumn 
+      : (typeof cfg.valueColumn === 'string' ? cfg.valueColumn : undefined);
     
     if (!xCol || !yCol || !valueCol) {
       return <div style={{ padding: '20px', color: '#dc2626' }}>Invalid heatmap config - missing x, y, or value column</div>;

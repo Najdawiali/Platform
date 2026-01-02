@@ -565,11 +565,16 @@ export const VisualizePage: React.FC = () => {
       const xColumn = chart.columnSelections[0]?.columnName || '';
       const yColumn = chart.columnSelections[1]?.columnName || '';
       
+      // For heatmap, extract column configurations
+      const heatmapXAxis = chart.type === 'heatmap' && chart.rowColumns.length > 0 ? chart.rowColumns[0]?.columnName : '';
+      const heatmapYAxis = chart.type === 'heatmap' && chart.rowColumns.length > 1 ? chart.rowColumns[1]?.columnName : '';
+      const heatmapValueColumn = chart.type === 'heatmap' && chart.colColumns.length > 0 ? chart.colColumns[0]?.columnName : '';
+      
       const regularChart = {
         dataset_id: datasetId,
         chart_type: chart.type,
-        x_column: xColumn,
-        y_column: yColumn,
+        x_column: chart.type === 'heatmap' ? (heatmapXAxis || xColumn) : xColumn,
+        y_column: chart.type === 'heatmap' ? (heatmapYAxis || yColumn) : yColumn,
         title: chart.title,
         config: {
           columnSelections: chart.columnSelections,
@@ -580,7 +585,19 @@ export const VisualizePage: React.FC = () => {
           ...(chart.barConfig && { barConfig: chart.barConfig }),
           ...(chart.pieConfig && { pieConfig: chart.pieConfig }),
           ...(chart.lineConfig && { lineConfig: chart.lineConfig }),
-          ...(chart.areaConfig && { areaConfig: chart.areaConfig })
+          ...(chart.areaConfig && { areaConfig: chart.areaConfig }),
+          ...(chart.heatmapConfig && { 
+            heatmapConfig: chart.heatmapConfig,
+            // Flatten heatmap config to top level for easier access
+            xAxis: heatmapXAxis,
+            yAxis: heatmapYAxis,
+            heatmapValueColumn: heatmapValueColumn,
+            heatmapAggregation: chart.heatmapConfig.aggregation,
+            heatmapColorScheme: chart.heatmapConfig.colorScheme,
+            heatmapShowValues: chart.heatmapConfig.showValues,
+            heatmapShowGrid: chart.heatmapConfig.showGrid,
+            heatmapCellBorderWidth: chart.heatmapConfig.cellBorderWidth
+          })
         },
         position_x: 0,
         position_y: index * 2,
