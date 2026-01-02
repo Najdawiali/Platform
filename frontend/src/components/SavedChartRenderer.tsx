@@ -8,6 +8,7 @@ import { FunnelChart } from './FunnelChart';
 import { ProgressiveXYChart } from './ProgressiveXYChart';
 import { SavedTableChart } from './SavedTableChart';
 import { HeatmapChart } from './HeatmapChart';
+import { HistogramChart } from './HistogramChart';
 
 interface SavedChartRendererProps {
   dashboardId: string;
@@ -752,6 +753,34 @@ export const SavedChartRenderer: React.FC<SavedChartRendererProps> = ({ dashboar
         showValues={showValues}
         showGrid={showGrid}
         cellBorderWidth={cellBorderWidth}
+        height={400}
+      />
+    );
+  }
+
+  // Histogram
+  if (chart.chart_type === 'histogram') {
+    const valueCol: string | undefined = (typeof cfg.histogramValueColumn === 'string' && cfg.histogramValueColumn)
+      ? cfg.histogramValueColumn
+      : (chart.x_column || undefined);
+    
+    if (!valueCol) {
+      return <div style={{ padding: '20px', color: '#dc2626' }}>Invalid histogram config - missing value column</div>;
+    }
+
+    const binCount = typeof cfg.histogramBinCount === 'number' ? cfg.histogramBinCount : 10;
+    const color = typeof cfg.histogramColor === 'string' ? cfg.histogramColor : '#3b82f6';
+    const showGrid = typeof cfg.histogramShowGrid === 'boolean' ? cfg.histogramShowGrid : true;
+    const showValues = typeof cfg.histogramShowValues === 'boolean' ? cfg.histogramShowValues : false;
+
+    return (
+      <HistogramChart
+        data={data}
+        valueColumn={valueCol}
+        binCount={binCount}
+        color={color}
+        showGrid={showGrid}
+        showValues={showValues}
         height={400}
       />
     );

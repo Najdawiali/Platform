@@ -93,9 +93,16 @@ interface HeatmapConfig {
   cellBorderWidth: number;
 }
 
+interface HistogramConfig {
+  binCount: number;
+  color: string;
+  showGrid: boolean;
+  showValues: boolean;
+}
+
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap' | 'histogram';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns: ColumnSelection[];  // X-axis (rows in Tableau)
@@ -107,6 +114,7 @@ interface ChartConfig {
   lineConfig?: LineConfig;
   areaConfig?: AreaConfig;
   heatmapConfig?: HeatmapConfig;
+  histogramConfig?: HistogramConfig;
 }
 
 // Helper function to detect column type based on data
@@ -570,10 +578,13 @@ export const VisualizePage: React.FC = () => {
       const heatmapYAxis = chart.type === 'heatmap' && chart.rowColumns.length > 1 ? chart.rowColumns[1]?.columnName : '';
       const heatmapValueColumn = chart.type === 'heatmap' && chart.colColumns.length > 0 ? chart.colColumns[0]?.columnName : '';
       
+      // For histogram, extract value column
+      const histogramValueColumn = chart.type === 'histogram' && chart.columnSelections.length > 0 ? chart.columnSelections[0]?.columnName : '';
+      
       const regularChart = {
         dataset_id: datasetId,
         chart_type: chart.type,
-        x_column: chart.type === 'heatmap' ? (heatmapXAxis || xColumn) : xColumn,
+        x_column: chart.type === 'heatmap' ? (heatmapXAxis || xColumn) : (chart.type === 'histogram' ? histogramValueColumn : xColumn),
         y_column: chart.type === 'heatmap' ? (heatmapYAxis || yColumn) : yColumn,
         title: chart.title,
         config: {
@@ -597,6 +608,15 @@ export const VisualizePage: React.FC = () => {
             heatmapShowValues: chart.heatmapConfig.showValues,
             heatmapShowGrid: chart.heatmapConfig.showGrid,
             heatmapCellBorderWidth: chart.heatmapConfig.cellBorderWidth
+          }),
+          ...(chart.histogramConfig && {
+            histogramConfig: chart.histogramConfig,
+            // Flatten histogram config to top level
+            histogramValueColumn: histogramValueColumn,
+            histogramBinCount: chart.histogramConfig.binCount,
+            histogramColor: chart.histogramConfig.color,
+            histogramShowGrid: chart.histogramConfig.showGrid,
+            histogramShowValues: chart.histogramConfig.showValues
           })
         },
         position_x: 0,
@@ -630,7 +650,8 @@ export const VisualizePage: React.FC = () => {
       kpi: 'KPI',
       funnel: 'Funnel',
       treemap: 'Treemap',
-      heatmap: 'Heatmap'
+      heatmap: 'Heatmap',
+      histogram: 'Histogram'
     };
 
     const newChart: ChartConfig = {
@@ -714,6 +735,14 @@ export const VisualizePage: React.FC = () => {
           showValues: true,
           showGrid: true,
           cellBorderWidth: 1
+        }
+      }),
+      ...(selectedChartType === 'histogram' && {
+        histogramConfig: {
+          binCount: 10,
+          color: '#3b82f6',
+          showGrid: true,
+          showValues: false
         }
       })
     };

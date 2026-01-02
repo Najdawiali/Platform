@@ -881,6 +881,38 @@ class DashboardService:
                         
                         is_aggregated = True
                         aggregation_strategy = "heatmap_groupby"
+                elif chart.chart_type == 'histogram':
+                    # Histogram: return raw numeric values (binning happens in frontend)
+                    value_col = cfg.get('histogramValueColumn') or chart.x_column
+                    
+                    print(f"📊 Histogram query config: histogramValueColumn={cfg.get('histogramValueColumn')}, x_column={chart.x_column}, final value_col={value_col}")
+                    
+                    if not value_col:
+                        # Fallback to raw data if column not configured
+                        quoted = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
+                        query = f"""
+                        SELECT {quoted}
+                        FROM parquet_scan('{parquet_path}')
+                        {limit_clause}
+                        {offset_clause}
+                        """
+                    else:
+                        # Validate identifier
+                        value_col = _validate_ident(str(value_col))
+                        
+                        # Just select the value column (non-null numeric values)
+                        query = f"""
+                        SELECT "{value_col}"
+                        FROM parquet_scan('{parquet_path}')
+                        WHERE "{value_col}" IS NOT NULL
+                        {limit_clause}
+                        {offset_clause}
+                        """
+                        
+                        print(f"📊 Histogram query: {query}")
+                        
+                        is_aggregated = False
+                        aggregation_strategy = "histogram_raw"
                 else:
                     quoted = ", ".join([f'\"{c}\"' for c in cols]) if cols else "*"
                     select_clause = quoted

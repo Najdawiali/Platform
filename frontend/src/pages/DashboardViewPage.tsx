@@ -9,6 +9,7 @@ import { GaugeChart } from '../components/GaugeChart';
 import { FunnelChart as FunnelChartComponent } from '../components/FunnelChart';
 import { ScatterPlot } from '../components/ScatterPlot';
 import { HeatmapChart } from '../components/HeatmapChart';
+import { HistogramChart } from '../components/HistogramChart';
 
 const toNumber = (v: any): number | null => {
   if (v === null || v === undefined) return null;
@@ -334,10 +335,21 @@ const DashboardViewPage: React.FC = () => {
             if (xCol) cols.add(xCol);
             if (yCol) cols.add(yCol);
             if (valueCol) cols.add(valueCol);
+          } else if (chart.chart_type === 'histogram') {
+            const valueCol = (typeof cfg.histogramValueColumn === 'string' && cfg.histogramValueColumn) ? cfg.histogramValueColumn : (typeof chart.x_column === 'string' ? chart.x_column : '');
+            console.log('📊 Histogram column extraction:', { histogramValueColumn: cfg.histogramValueColumn, x_column: chart.x_column, valueCol });
+            if (valueCol) cols.add(valueCol);
           }
           if (cols.size > 0) requestedColumns = Array.from(cols).join(',');
 
           const data = await dashboardService.getChartAggregatedData(id!, chart.id, requestedColumns ? { columns: requestedColumns } : undefined);
+          console.log(`📊 Chart data fetched for ${chart.chart_type} (${chart.id}):`, {
+            chartType: chart.chart_type,
+            requestedColumns,
+            dataLength: data.data?.length || 0,
+            columns: data.columns,
+            firstRow: data.data?.[0]
+          });
           return {
             chartId: chart.id,
             data: data.data,  // Already aggregated on server!
@@ -1225,9 +1237,14 @@ const DashboardViewPage: React.FC = () => {
       );
     }
     
+    // Special chart types that handle their own data processing
+    const specialChartTypes = ['histogram', 'heatmap', 'gauge', 'kpi', 'scatter', 'funnel', 'radar', 'treemap'];
+    const isSpecialChart = specialChartTypes.includes(chart.chart_type);
+    
     // Use raw data directly - no aggregation
     // Map data to recharts format: name (x-axis), value (y-axis)
-    const processedData = data
+    // Skip this processing for special chart types that handle their own data
+    const processedData = isSpecialChart ? [] : data
       .filter((row: any) => row[chart.x_column] != null && row[chart.y_column] != null)
       .map((row: any) => ({
         name: String(row[chart.x_column]),
@@ -1236,8 +1253,8 @@ const DashboardViewPage: React.FC = () => {
     
     // Debug logs removed
     
-    // If no data after processing, show empty state
-    if (processedData.length === 0) {
+    // If no data after processing, show empty state (only for non-special charts)
+    if (!isSpecialChart && processedData.length === 0) {
       return (
         <div style={{
           backgroundColor: '#fef9e7',
@@ -1776,6 +1793,50 @@ const DashboardViewPage: React.FC = () => {
             cellBorderWidth={heatmapCellBorderWidth}
           />
         );
+      case 'histogram':
+        // Extract histogram config
+        const histogramValueCol = chart.config?.histogramValueColumn || chart.x_column || '';
+        const histogramBinCount = typeof chart.config?.histogramBinCount === 'number' 
+          ? chart.config.histogramBinCount 
+          : 10;
+        const histogramColor = typeof chart.config?.histogramColor === 'string'
+          ? chart.config.histogramColor
+          : '#3b82f6';
+        const histogramShowGrid = typeof chart.config?.histogramShowGrid === 'boolean'
+          ? chart.config.histogramShowGrid
+          : true;
+        const histogramShowValues = typeof chart.config?.histogramShowValues === 'boolean'
+          ? chart.config.histogramShowValues
+          : false;
+
+        console.log('📊 Histogram rendering:', {
+          histogramValueCol,
+          histogramBinCount,
+          histogramColor,
+          chartConfig: chart.config,
+          chartXColumn: chart.x_column,
+          dataLength: data.length,
+          firstRow: data[0]
+        });
+
+        if (!histogramValueCol) {
+          return (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
+              Histogram requires a numeric value column
+            </div>
+          );
+        }
+
+        return (
+          <HistogramChart
+            data={data}
+            valueColumn={histogramValueCol}
+            binCount={histogramBinCount}
+            color={histogramColor}
+            showGrid={histogramShowGrid}
+            showValues={histogramShowValues}
+          />
+        );
       default:
         return (
           <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
@@ -1826,6 +1887,18 @@ const DashboardViewPage: React.FC = () => {
 
   if (sqlInsight) {
     const chartData = chartsData.find(d => d.chartId === sqlInsight.chart.id);
+    
+    console.log('📊 Looking up chartData for insight:', {
+      chartId: sqlInsight.chart.id,
+      chartsDataLength: chartsData?.length || 0,
+      allChartIds: chartsData?.map(d => d.chartId) || [],
+      foundChartData: !!chartData,
+      chartDataDetails: chartData ? {
+        dataLength: chartData.data?.length || 0,
+        hasError: !!chartData.error,
+        columns: chartData.columns
+      } : 'NOT FOUND'
+    });
     
     const formatTime = (iso?: string): string => {
       if (!iso) return "Unknown";
@@ -2133,6 +2206,17 @@ const DashboardViewPage: React.FC = () => {
                         ? `Custom (${cfg.heatmapColorScheme.length} colors)`
                         : 'Default';
 
+                      // Histogram configuration
+                      const histogramValueColumn = (typeof cfg.histogramValueColumn === 'string' && cfg.histogramValueColumn)
+                        ? cfg.histogramValueColumn
+                        : (sqlInsight.chart.x_column || '');
+                      const histogramBinCount = typeof cfg.histogramBinCount === 'number' ? cfg.histogramBinCount : 10;
+                      const histogramColor = typeof cfg.histogramColor === 'string' ? cfg.histogramColor : '#3b82f6';
+                      const histogramShowGrid = typeof cfg.histogramShowGrid === 'boolean' ? cfg.histogramShowGrid : true;
+                      const histogramShowValues = typeof cfg.histogramShowValues === 'boolean' ? cfg.histogramShowValues : false;
+                      const isHistogram = sqlInsight.chart.chart_type === 'histogram';
+                      const isFunnel = sqlInsight.chart.chart_type === 'funnel';
+
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                           {sqlInsight.chart.chart_type === 'gauge' || sqlInsight.chart.chart_type === 'kpi' ? (
@@ -2287,7 +2371,7 @@ const DashboardViewPage: React.FC = () => {
                               ) : null}
 
                               {/* X-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
+                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && !isHistogram && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>X-Axis</div>
                                   <div style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -2297,7 +2381,7 @@ const DashboardViewPage: React.FC = () => {
                               )}
 
                               {/* Y-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
+                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && !isHistogram && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Y-Axis</div>
                                   <div style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -2515,6 +2599,35 @@ const DashboardViewPage: React.FC = () => {
                                   <div style={{ gridColumn: '1 / -1' }}>
                                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Color Scheme</div>
                                     <div style={{ fontSize: '14px', color: '#0f172a' }}>{heatmapColorScheme}</div>
+                                  </div>
+                                </>
+                              ) : null}
+
+                              {/* Histogram settings */}
+                              {isHistogram ? (
+                                <>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Value Column</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{histogramValueColumn || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Bin Count</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{histogramBinCount}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Color</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ width: '20px', height: '20px', backgroundColor: histogramColor, borderRadius: '4px', border: '1px solid #e5e7eb' }}></div>
+                                      {histogramColor}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Grid</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{histogramShowGrid ? 'On' : 'Off'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Values</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{histogramShowValues ? 'On' : 'Off'}</div>
                                   </div>
                                 </>
                               ) : null}

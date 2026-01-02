@@ -28,10 +28,11 @@ import { GaugeChart } from './GaugeChart';
 import { FunnelChart } from './FunnelChart';
 import { ScatterPlot } from './ScatterPlot';
 import { HeatmapChart } from './HeatmapChart';
+import { HistogramChart } from './HistogramChart';
 import { dashboardService } from '../services/dashboardService';
 import { savedQueryService } from '../services/savedQueryService';
 
-type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'radar' | 'funnel' | 'kpi' | 'gauge' | 'table' | 'heatmap';
+type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'radar' | 'funnel' | 'kpi' | 'gauge' | 'table' | 'heatmap' | 'histogram';
 
 type Aggregation = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 type SortOrder = 'none' | 'x_asc' | 'x_desc' | 'y_asc' | 'y_desc';
@@ -578,6 +579,20 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
       </svg>
     ),
   },
+  histogram: {
+    label: 'Histogram',
+    help: 'Display the distribution of numeric values in bins.',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 14V2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M2 14H14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <rect x="3.5" y="9" width="1.8" height="5" fill="currentColor" opacity="0.7" />
+        <rect x="5.8" y="6" width="1.8" height="8" fill="currentColor" opacity="0.7" />
+        <rect x="8.1" y="4" width="1.8" height="10" fill="currentColor" opacity="0.7" />
+        <rect x="10.4" y="7" width="1.8" height="7" fill="currentColor" opacity="0.7" />
+      </svg>
+    ),
+  },
 };
 
 export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
@@ -711,6 +726,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const [heatmapShowGrid, setHeatmapShowGrid] = useState<boolean>(true);
   const [heatmapCellBorderWidth, setHeatmapCellBorderWidth] = useState<number>(1);
   const [heatmapColorScheme, setHeatmapColorScheme] = useState<string[]>(['#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444']);
+
+  // Histogram options
+  const [histogramValueColumn, setHistogramValueColumn] = useState<string>('');
+  const [histogramBinCount, setHistogramBinCount] = useState<number>(10);
+  const [histogramColor, setHistogramColor] = useState<string>('#3b82f6');
+  const [histogramShowGrid, setHistogramShowGrid] = useState<boolean>(true);
+  const [histogramShowValues, setHistogramShowValues] = useState<boolean>(false);
 
   // Global display options
   const [showGrid, setShowGrid] = useState<boolean>(true);
@@ -856,6 +878,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (typeof initialConfig.heatmapShowGrid === 'boolean') setHeatmapShowGrid(initialConfig.heatmapShowGrid);
       if (typeof initialConfig.heatmapCellBorderWidth === 'number') setHeatmapCellBorderWidth(initialConfig.heatmapCellBorderWidth);
       if (Array.isArray(initialConfig.heatmapColorScheme)) setHeatmapColorScheme(initialConfig.heatmapColorScheme);
+
+      // Histogram
+      if (initialConfig.histogramValueColumn) setHistogramValueColumn(initialConfig.histogramValueColumn);
+      if (typeof initialConfig.histogramBinCount === 'number') setHistogramBinCount(initialConfig.histogramBinCount);
+      if (initialConfig.histogramColor) setHistogramColor(initialConfig.histogramColor);
+      if (typeof initialConfig.histogramShowGrid === 'boolean') setHistogramShowGrid(initialConfig.histogramShowGrid);
+      if (typeof initialConfig.histogramShowValues === 'boolean') setHistogramShowValues(initialConfig.histogramShowValues);
     }
   }, [initialConfig, isOpen]);
   
@@ -978,9 +1007,24 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         cfg.heatmapShowGrid = heatmapShowGrid;
         cfg.heatmapCellBorderWidth = heatmapCellBorderWidth;
         cfg.heatmapColorScheme = heatmapColorScheme;
+      } else if (chartType === 'histogram') {
+        cfg.histogramValueColumn = histogramValueColumn;
+        cfg.histogramBinCount = histogramBinCount;
+        cfg.histogramColor = histogramColor;
+        cfg.histogramShowGrid = histogramShowGrid;
+        cfg.histogramShowValues = histogramShowValues;
       }
 
-      return { ...common, config: cfg };
+      // Override xAxis/yAxis for special chart types
+      let finalXAxis = primaryXAxis;
+      let finalYAxis = primaryYAxis;
+      
+      if (chartType === 'histogram') {
+        finalXAxis = histogramValueColumn; // Use value column as x_column for backend
+        finalYAxis = ''; // No y-axis for histogram
+      }
+
+      return { ...common, xAxis: finalXAxis, yAxis: finalYAxis, config: cfg };
     }, [
       aggregation,
       areaFillOpacity,
@@ -1038,6 +1082,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       heatmapShowGrid,
       heatmapCellBorderWidth,
       heatmapColorScheme,
+      histogramValueColumn,
+      histogramBinCount,
+      histogramColor,
+      histogramShowGrid,
+      histogramShowValues,
       seriesBy,
       showDataLabels,
       showGrid,
@@ -2256,6 +2305,34 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       );
     }
 
+    if (chartType === 'histogram') {
+      if (!histogramValueColumn) {
+        return (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>📊</div>
+              <div style={{ fontSize: '14px', fontWeight: 600 }}>Select a numeric column</div>
+              <div style={{ fontSize: '12px', marginTop: '6px' }}>Histogram shows the distribution of values</div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+          <HistogramChart
+            data={rows}
+            valueColumn={histogramValueColumn}
+            binCount={histogramBinCount}
+            color={histogramColor}
+            showGrid={histogramShowGrid}
+            showValues={histogramShowValues}
+            height={400}
+          />
+        </div>
+      );
+    }
+
     if (chartType === 'funnel') {
       const data = funnelData;
       const currentColors = data.map((d, i) => getColor(d.name, i));
@@ -2458,12 +2535,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     if (t === 'pie' || t === 'donut' || t === 'funnel' || t === 'radar') return { x: 'Category', y: 'Value' };
     if (t === 'scatter') return { x: 'X-Axis', y: 'Y-Axis' };
     if (t === 'kpi' || t === 'gauge') return { x: '—', y: 'Value' };
+    if (t === 'histogram') return { x: '—', y: 'Value' };
     return { x: 'X-Axis', y: 'Y-Axis' };
   };
 
   const showXYSelectors = chartType !== 'table';
-  const showXSelector = showXYSelectors && !(chartType === 'kpi' || chartType === 'gauge');
-  const showYSelector = showXYSelectors;
+  const showXSelector = showXYSelectors && !(chartType === 'kpi' || chartType === 'gauge' || chartType === 'histogram');
+  const showYSelector = showXYSelectors && chartType !== 'histogram';
 
   const showSeriesSelector = chartType === 'bar' || chartType === 'line' || chartType === 'area';
   const showAggregationSelector = showSeriesSelector && mode !== 'sql_direct';
@@ -4150,6 +4228,84 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                   style={{ width: '100%', accentColor: '#4f46e5' }}
                 />
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', marginBottom: '14px' }}>{heatmapCellBorderWidth}px</div>
+              </>
+            ) : null}
+
+            {chartType === 'histogram' ? (
+              <>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>HISTOGRAM SETTINGS</div>
+
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Value column *</div>
+                <select
+                  value={histogramValueColumn}
+                  onChange={(e) => setHistogramValueColumn(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    marginBottom: '14px'
+                  }}
+                >
+                  <option value="">Select numeric column</option>
+                  {numericColumns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+
+                <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700, marginBottom: '6px' }}>Number of bins</div>
+                <input
+                  type="range"
+                  min={5}
+                  max={50}
+                  step={1}
+                  value={histogramBinCount}
+                  onChange={(e) => setHistogramBinCount(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#4f46e5' }}
+                />
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', marginBottom: '14px' }}>{histogramBinCount} bins</div>
+
+                <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700, marginBottom: '6px' }}>Bar color</div>
+                <input
+                  type="color"
+                  value={histogramColor}
+                  onChange={(e) => setHistogramColor(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '40px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    cursor: 'pointer',
+                    marginBottom: '14px'
+                  }}
+                />
+
+                <label style={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '10px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={histogramShowGrid}
+                    onChange={(e) => setHistogramShowGrid(e.target.checked)}
+                    style={{ marginRight: '8px', accentColor: '#4f46e5', cursor: 'pointer' }}
+                  />
+                  Show grid
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '14px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={histogramShowValues}
+                    onChange={(e) => setHistogramShowValues(e.target.checked)}
+                    style={{ marginRight: '8px', accentColor: '#4f46e5', cursor: 'pointer' }}
+                  />
+                  Show values on bars
+                </label>
               </>
             ) : null}
 
