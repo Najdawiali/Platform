@@ -913,6 +913,45 @@ class DashboardService:
                         
                         is_aggregated = False
                         aggregation_strategy = "histogram_raw"
+                elif chart.chart_type == 'boxplot':
+                    # Box plot: return raw values (statistics calculated in frontend)
+                    value_col = cfg.get('boxPlotValueColumn') or chart.x_column
+                    category_col = cfg.get('boxPlotCategoryColumn')
+                    
+                    if not value_col:
+                        # Fallback to raw data if column not configured
+                        quoted = ", ".join([f'"{c}"' for c in cols]) if cols else "*"
+                        query = f"""
+                        SELECT {quoted}
+                        FROM parquet_scan('{parquet_path}')
+                        {limit_clause}
+                        {offset_clause}
+                        """
+                    else:
+                        # Validate identifiers
+                        value_col = _validate_ident(str(value_col))
+                        
+                        # Select value column and optional category column
+                        if category_col:
+                            category_col = _validate_ident(str(category_col))
+                            query = f"""
+                            SELECT "{value_col}", "{category_col}"
+                            FROM parquet_scan('{parquet_path}')
+                            WHERE "{value_col}" IS NOT NULL
+                            {limit_clause}
+                            {offset_clause}
+                            """
+                        else:
+                            query = f"""
+                            SELECT "{value_col}"
+                            FROM parquet_scan('{parquet_path}')
+                            WHERE "{value_col}" IS NOT NULL
+                            {limit_clause}
+                            {offset_clause}
+                            """
+                        
+                        is_aggregated = False
+                        aggregation_strategy = "boxplot_raw"
                 else:
                     quoted = ", ".join([f'\"{c}\"' for c in cols]) if cols else "*"
                     select_clause = quoted

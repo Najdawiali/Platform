@@ -100,9 +100,16 @@ interface HistogramConfig {
   showValues: boolean;
 }
 
+interface BoxPlotConfig {
+  categoryColumn: string;
+  showOutliers: boolean;
+  boxColor: string;
+  showGrid: boolean;
+}
+
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap' | 'histogram';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap' | 'histogram' | 'boxplot';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns: ColumnSelection[];  // X-axis (rows in Tableau)
@@ -115,6 +122,7 @@ interface ChartConfig {
   areaConfig?: AreaConfig;
   heatmapConfig?: HeatmapConfig;
   histogramConfig?: HistogramConfig;
+  boxPlotConfig?: BoxPlotConfig;
 }
 
 // Helper function to detect column type based on data
@@ -265,7 +273,7 @@ export const VisualizePage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('design');
   const [charts, setCharts] = useState<ChartConfig[]>([]);
-  const [selectedChartType, setSelectedChartType] = useState<'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap'>('bar');
+  const [selectedChartType, setSelectedChartType] = useState<'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap' | 'histogram' | 'boxplot'>('bar');
   const [hoveredChartType, setHoveredChartType] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [editingChartId, setEditingChartId] = useState<string | null>(null);
@@ -581,10 +589,13 @@ export const VisualizePage: React.FC = () => {
       // For histogram, extract value column
       const histogramValueColumn = chart.type === 'histogram' && chart.columnSelections.length > 0 ? chart.columnSelections[0]?.columnName : '';
       
+      // For boxplot, extract value column
+      const boxPlotValueColumn = chart.type === 'boxplot' && chart.columnSelections.length > 0 ? chart.columnSelections[0]?.columnName : '';
+      
       const regularChart = {
         dataset_id: datasetId,
         chart_type: chart.type,
-        x_column: chart.type === 'heatmap' ? (heatmapXAxis || xColumn) : (chart.type === 'histogram' ? histogramValueColumn : xColumn),
+        x_column: chart.type === 'heatmap' ? (heatmapXAxis || xColumn) : (chart.type === 'histogram' ? histogramValueColumn : (chart.type === 'boxplot' ? boxPlotValueColumn : xColumn)),
         y_column: chart.type === 'heatmap' ? (heatmapYAxis || yColumn) : yColumn,
         title: chart.title,
         config: {
@@ -617,6 +628,15 @@ export const VisualizePage: React.FC = () => {
             histogramColor: chart.histogramConfig.color,
             histogramShowGrid: chart.histogramConfig.showGrid,
             histogramShowValues: chart.histogramConfig.showValues
+          }),
+          ...(chart.boxPlotConfig && {
+            boxPlotConfig: chart.boxPlotConfig,
+            // Flatten box plot config to top level
+            boxPlotValueColumn: boxPlotValueColumn,
+            boxPlotCategoryColumn: chart.boxPlotConfig.categoryColumn,
+            boxPlotShowOutliers: chart.boxPlotConfig.showOutliers,
+            boxPlotBoxColor: chart.boxPlotConfig.boxColor,
+            boxPlotShowGrid: chart.boxPlotConfig.showGrid
           })
         },
         position_x: 0,
@@ -651,7 +671,8 @@ export const VisualizePage: React.FC = () => {
       funnel: 'Funnel',
       treemap: 'Treemap',
       heatmap: 'Heatmap',
-      histogram: 'Histogram'
+      histogram: 'Histogram',
+      boxplot: 'Box Plot'
     };
 
     const newChart: ChartConfig = {
@@ -743,6 +764,14 @@ export const VisualizePage: React.FC = () => {
           color: '#3b82f6',
           showGrid: true,
           showValues: false
+        }
+      }),
+      ...(selectedChartType === 'boxplot' && {
+        boxPlotConfig: {
+          categoryColumn: '',
+          showOutliers: true,
+          boxColor: '#3b82f6',
+          showGrid: true
         }
       })
     };

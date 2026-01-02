@@ -29,10 +29,11 @@ import { FunnelChart } from './FunnelChart';
 import { ScatterPlot } from './ScatterPlot';
 import { HeatmapChart } from './HeatmapChart';
 import { HistogramChart } from './HistogramChart';
+import { BoxPlotChart } from './BoxPlotChart';
 import { dashboardService } from '../services/dashboardService';
 import { savedQueryService } from '../services/savedQueryService';
 
-type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'radar' | 'funnel' | 'kpi' | 'gauge' | 'table' | 'heatmap' | 'histogram';
+type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'radar' | 'funnel' | 'kpi' | 'gauge' | 'table' | 'heatmap' | 'histogram' | 'boxplot';
 
 type Aggregation = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 type SortOrder = 'none' | 'x_asc' | 'x_desc' | 'y_asc' | 'y_desc';
@@ -593,6 +594,23 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
       </svg>
     ),
   },
+  boxplot: {
+    label: 'Box & Whisker',
+    help: 'Display distribution statistics (min, Q1, median, Q3, max) and outliers.',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 14V2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M2 14H14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <rect x="5" y="5" width="6" height="6" fill="currentColor" opacity="0.3" stroke="currentColor" strokeWidth="1.2" />
+        <line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="8" y1="3" x2="8" y2="5" stroke="currentColor" strokeWidth="1.2" />
+        <line x1="8" y1="11" x2="8" y2="13" stroke="currentColor" strokeWidth="1.2" />
+        <line x1="6.5" y1="3" x2="9.5" y2="3" stroke="currentColor" strokeWidth="1.2" />
+        <line x1="6.5" y1="13" x2="9.5" y2="13" stroke="currentColor" strokeWidth="1.2" />
+        <circle cx="12" cy="4" r="0.8" fill="currentColor" />
+      </svg>
+    ),
+  },
 };
 
 export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
@@ -733,6 +751,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const [histogramColor, setHistogramColor] = useState<string>('#3b82f6');
   const [histogramShowGrid, setHistogramShowGrid] = useState<boolean>(true);
   const [histogramShowValues, setHistogramShowValues] = useState<boolean>(false);
+
+  // Box plot options
+  const [boxPlotValueColumn, setBoxPlotValueColumn] = useState<string>('');
+  const [boxPlotCategoryColumn, setBoxPlotCategoryColumn] = useState<string>('');
+  const [boxPlotShowOutliers, setBoxPlotShowOutliers] = useState<boolean>(true);
+  const [boxPlotBoxColor, setBoxPlotBoxColor] = useState<string>('#3b82f6');
+  const [boxPlotShowGrid, setBoxPlotShowGrid] = useState<boolean>(true);
 
   // Global display options
   const [showGrid, setShowGrid] = useState<boolean>(true);
@@ -885,6 +910,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (initialConfig.histogramColor) setHistogramColor(initialConfig.histogramColor);
       if (typeof initialConfig.histogramShowGrid === 'boolean') setHistogramShowGrid(initialConfig.histogramShowGrid);
       if (typeof initialConfig.histogramShowValues === 'boolean') setHistogramShowValues(initialConfig.histogramShowValues);
+
+      // Box plot
+      if (initialConfig.boxPlotValueColumn) setBoxPlotValueColumn(initialConfig.boxPlotValueColumn);
+      if (initialConfig.boxPlotCategoryColumn) setBoxPlotCategoryColumn(initialConfig.boxPlotCategoryColumn);
+      if (typeof initialConfig.boxPlotShowOutliers === 'boolean') setBoxPlotShowOutliers(initialConfig.boxPlotShowOutliers);
+      if (initialConfig.boxPlotBoxColor) setBoxPlotBoxColor(initialConfig.boxPlotBoxColor);
+      if (typeof initialConfig.boxPlotShowGrid === 'boolean') setBoxPlotShowGrid(initialConfig.boxPlotShowGrid);
     }
   }, [initialConfig, isOpen]);
   
@@ -1013,6 +1045,12 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         cfg.histogramColor = histogramColor;
         cfg.histogramShowGrid = histogramShowGrid;
         cfg.histogramShowValues = histogramShowValues;
+      } else if (chartType === 'boxplot') {
+        cfg.boxPlotValueColumn = boxPlotValueColumn;
+        cfg.boxPlotCategoryColumn = boxPlotCategoryColumn;
+        cfg.boxPlotShowOutliers = boxPlotShowOutliers;
+        cfg.boxPlotBoxColor = boxPlotBoxColor;
+        cfg.boxPlotShowGrid = boxPlotShowGrid;
       }
 
       // Override xAxis/yAxis for special chart types
@@ -1022,6 +1060,9 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (chartType === 'histogram') {
         finalXAxis = histogramValueColumn; // Use value column as x_column for backend
         finalYAxis = ''; // No y-axis for histogram
+      } else if (chartType === 'boxplot') {
+        finalXAxis = boxPlotValueColumn; // Use value column as x_column for backend
+        finalYAxis = ''; // No y-axis for box plot
       }
 
       return { ...common, xAxis: finalXAxis, yAxis: finalYAxis, config: cfg };
@@ -1087,6 +1128,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       histogramColor,
       histogramShowGrid,
       histogramShowValues,
+      boxPlotValueColumn,
+      boxPlotCategoryColumn,
+      boxPlotShowOutliers,
+      boxPlotBoxColor,
+      boxPlotShowGrid,
       seriesBy,
       showDataLabels,
       showGrid,
@@ -2333,6 +2379,34 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       );
     }
 
+    if (chartType === 'boxplot') {
+      if (!boxPlotValueColumn) {
+        return (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>📦</div>
+              <div style={{ fontSize: '14px', fontWeight: 600 }}>Select a numeric column</div>
+              <div style={{ fontSize: '12px', marginTop: '6px' }}>Box plot shows distribution statistics</div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+          <BoxPlotChart
+            data={rows}
+            valueColumn={boxPlotValueColumn}
+            categoryColumn={boxPlotCategoryColumn || undefined}
+            showOutliers={boxPlotShowOutliers}
+            boxColor={boxPlotBoxColor}
+            showGrid={boxPlotShowGrid}
+            height={400}
+          />
+        </div>
+      );
+    }
+
     if (chartType === 'funnel') {
       const data = funnelData;
       const currentColors = data.map((d, i) => getColor(d.name, i));
@@ -2535,13 +2609,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     if (t === 'pie' || t === 'donut' || t === 'funnel' || t === 'radar') return { x: 'Category', y: 'Value' };
     if (t === 'scatter') return { x: 'X-Axis', y: 'Y-Axis' };
     if (t === 'kpi' || t === 'gauge') return { x: '—', y: 'Value' };
-    if (t === 'histogram') return { x: '—', y: 'Value' };
+    if (t === 'histogram' || t === 'boxplot') return { x: '—', y: 'Value' };
     return { x: 'X-Axis', y: 'Y-Axis' };
   };
 
   const showXYSelectors = chartType !== 'table';
-  const showXSelector = showXYSelectors && !(chartType === 'kpi' || chartType === 'gauge' || chartType === 'histogram');
-  const showYSelector = showXYSelectors && chartType !== 'histogram';
+  const showXSelector = showXYSelectors && !(chartType === 'kpi' || chartType === 'gauge' || chartType === 'histogram' || chartType === 'boxplot');
+  const showYSelector = showXYSelectors && chartType !== 'histogram' && chartType !== 'boxplot';
 
   const showSeriesSelector = chartType === 'bar' || chartType === 'line' || chartType === 'area';
   const showAggregationSelector = showSeriesSelector && mode !== 'sql_direct';
@@ -4305,6 +4379,100 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                     style={{ marginRight: '8px', accentColor: '#4f46e5', cursor: 'pointer' }}
                   />
                   Show values on bars
+                </label>
+              </>
+            ) : null}
+
+            {chartType === 'boxplot' ? (
+              <>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>BOX PLOT SETTINGS</div>
+
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Value column *</div>
+                <select
+                  value={boxPlotValueColumn}
+                  onChange={(e) => setBoxPlotValueColumn(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    marginBottom: '14px'
+                  }}
+                >
+                  <option value="">Select numeric column</option>
+                  {numericColumns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Category column (optional)</div>
+                <select
+                  value={boxPlotCategoryColumn}
+                  onChange={(e) => setBoxPlotCategoryColumn(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    marginBottom: '8px'
+                  }}
+                >
+                  <option value="">None (single box)</option>
+                  {nonNumericColumns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '14px' }}>
+                  Group data by category to show multiple boxes
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700, marginBottom: '6px' }}>Box color</div>
+                <input
+                  type="color"
+                  value={boxPlotBoxColor}
+                  onChange={(e) => setBoxPlotBoxColor(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '40px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    cursor: 'pointer',
+                    marginBottom: '14px'
+                  }}
+                />
+
+                <label style={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '10px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={boxPlotShowOutliers}
+                    onChange={(e) => setBoxPlotShowOutliers(e.target.checked)}
+                    style={{ marginRight: '8px', accentColor: '#4f46e5', cursor: 'pointer' }}
+                  />
+                  Show outliers
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '14px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={boxPlotShowGrid}
+                    onChange={(e) => setBoxPlotShowGrid(e.target.checked)}
+                    style={{ marginRight: '8px', accentColor: '#4f46e5', cursor: 'pointer' }}
+                  />
+                  Show grid lines
                 </label>
               </>
             ) : null}

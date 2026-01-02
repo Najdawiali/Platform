@@ -54,7 +54,7 @@ interface ScatterConfig {
 
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap' | 'histogram' | 'boxplot';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns?: ColumnSelection[];

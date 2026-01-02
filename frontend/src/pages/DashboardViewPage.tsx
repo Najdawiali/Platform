@@ -10,6 +10,7 @@ import { FunnelChart as FunnelChartComponent } from '../components/FunnelChart';
 import { ScatterPlot } from '../components/ScatterPlot';
 import { HeatmapChart } from '../components/HeatmapChart';
 import { HistogramChart } from '../components/HistogramChart';
+import { BoxPlotChart } from '../components/BoxPlotChart';
 
 const toNumber = (v: any): number | null => {
   if (v === null || v === undefined) return null;
@@ -339,6 +340,11 @@ const DashboardViewPage: React.FC = () => {
             const valueCol = (typeof cfg.histogramValueColumn === 'string' && cfg.histogramValueColumn) ? cfg.histogramValueColumn : (typeof chart.x_column === 'string' ? chart.x_column : '');
             console.log('📊 Histogram column extraction:', { histogramValueColumn: cfg.histogramValueColumn, x_column: chart.x_column, valueCol });
             if (valueCol) cols.add(valueCol);
+          } else if (chart.chart_type === 'boxplot') {
+            const valueCol = (typeof cfg.boxPlotValueColumn === 'string' && cfg.boxPlotValueColumn) ? cfg.boxPlotValueColumn : (typeof chart.x_column === 'string' ? chart.x_column : '');
+            const catCol = (typeof cfg.boxPlotCategoryColumn === 'string' && cfg.boxPlotCategoryColumn) ? cfg.boxPlotCategoryColumn : '';
+            if (valueCol) cols.add(valueCol);
+            if (catCol) cols.add(catCol);
           }
           if (cols.size > 0) requestedColumns = Array.from(cols).join(',');
 
@@ -1238,7 +1244,7 @@ const DashboardViewPage: React.FC = () => {
     }
     
     // Special chart types that handle their own data processing
-    const specialChartTypes = ['histogram', 'heatmap', 'gauge', 'kpi', 'scatter', 'funnel', 'radar', 'treemap'];
+    const specialChartTypes = ['histogram', 'heatmap', 'gauge', 'kpi', 'scatter', 'funnel', 'radar', 'treemap', 'boxplot'];
     const isSpecialChart = specialChartTypes.includes(chart.chart_type);
     
     // Use raw data directly - no aggregation
@@ -1837,6 +1843,38 @@ const DashboardViewPage: React.FC = () => {
             showValues={histogramShowValues}
           />
         );
+      case 'boxplot':
+        // Extract box plot config
+        const boxPlotValueCol = chart.config?.boxPlotValueColumn || chart.x_column || '';
+        const boxPlotCategoryCol = chart.config?.boxPlotCategoryColumn || '';
+        const boxPlotShowOutliers = typeof chart.config?.boxPlotShowOutliers === 'boolean'
+          ? chart.config.boxPlotShowOutliers
+          : true;
+        const boxPlotBoxColor = typeof chart.config?.boxPlotBoxColor === 'string'
+          ? chart.config.boxPlotBoxColor
+          : '#3b82f6';
+        const boxPlotShowGrid = typeof chart.config?.boxPlotShowGrid === 'boolean'
+          ? chart.config.boxPlotShowGrid
+          : true;
+
+        if (!boxPlotValueCol) {
+          return (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
+              Box plot requires a numeric value column
+            </div>
+          );
+        }
+
+        return (
+          <BoxPlotChart
+            data={data}
+            valueColumn={boxPlotValueCol}
+            categoryColumn={boxPlotCategoryCol || undefined}
+            showOutliers={boxPlotShowOutliers}
+            boxColor={boxPlotBoxColor}
+            showGrid={boxPlotShowGrid}
+          />
+        );
       default:
         return (
           <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
@@ -2215,6 +2253,16 @@ const DashboardViewPage: React.FC = () => {
                       const histogramShowGrid = typeof cfg.histogramShowGrid === 'boolean' ? cfg.histogramShowGrid : true;
                       const histogramShowValues = typeof cfg.histogramShowValues === 'boolean' ? cfg.histogramShowValues : false;
                       const isHistogram = sqlInsight.chart.chart_type === 'histogram';
+                      
+                      // Box plot configuration
+                      const boxPlotValueColumn = (typeof cfg.boxPlotValueColumn === 'string' && cfg.boxPlotValueColumn)
+                        ? cfg.boxPlotValueColumn
+                        : (sqlInsight.chart.x_column || '');
+                      const boxPlotCategoryColumn = typeof cfg.boxPlotCategoryColumn === 'string' ? cfg.boxPlotCategoryColumn : '';
+                      const boxPlotShowOutliers = typeof cfg.boxPlotShowOutliers === 'boolean' ? cfg.boxPlotShowOutliers : true;
+                      const boxPlotBoxColor = typeof cfg.boxPlotBoxColor === 'string' ? cfg.boxPlotBoxColor : '#3b82f6';
+                      const boxPlotShowGrid = typeof cfg.boxPlotShowGrid === 'boolean' ? cfg.boxPlotShowGrid : true;
+                      const isBoxPlot = sqlInsight.chart.chart_type === 'boxplot';
                       const isFunnel = sqlInsight.chart.chart_type === 'funnel';
 
                       return (
@@ -2371,7 +2419,7 @@ const DashboardViewPage: React.FC = () => {
                               ) : null}
 
                               {/* X-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && !isHistogram && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
+                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && !isHistogram && !isBoxPlot && (xAxes.length > 0 || sqlInsight.chart.x_column) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>X-Axis</div>
                                   <div style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -2381,7 +2429,7 @@ const DashboardViewPage: React.FC = () => {
                               )}
 
                               {/* Y-Axis */}
-                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && !isHistogram && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
+                              {sqlInsight.chart.chart_type !== 'table' && !isHeatmap && !isHistogram && !isBoxPlot && (yAxes.length > 0 || sqlInsight.chart.y_column) && !(isRadar && radarYAxes.length > 0) && (
                                 <div>
                                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Y-Axis</div>
                                   <div style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -2628,6 +2676,35 @@ const DashboardViewPage: React.FC = () => {
                                   <div>
                                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Values</div>
                                     <div style={{ fontSize: '14px', color: '#0f172a' }}>{histogramShowValues ? 'On' : 'Off'}</div>
+                                  </div>
+                                </>
+                              ) : null}
+
+                              {/* Box Plot settings */}
+                              {isBoxPlot ? (
+                                <>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Value Column</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{boxPlotValueColumn || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Category Column</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{boxPlotCategoryColumn || 'None (single box)'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Outliers</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{boxPlotShowOutliers ? 'On' : 'Off'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Box Color</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ width: '20px', height: '20px', backgroundColor: boxPlotBoxColor, borderRadius: '4px', border: '1px solid #e5e7eb' }}></div>
+                                      {boxPlotBoxColor}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>Show Grid</div>
+                                    <div style={{ fontSize: '14px', color: '#0f172a' }}>{boxPlotShowGrid ? 'On' : 'Off'}</div>
                                   </div>
                                 </>
                               ) : null}

@@ -16,7 +16,8 @@ import {
   Filter,
   Radar as RadarIcon,
   TreePine,
-  BarChart4
+  BarChart4,
+  BoxSelect
 } from 'lucide-react';
 
 interface LibraryModalProps {
@@ -49,6 +50,7 @@ export const LibraryModal: React.FC<LibraryModalProps> = ({ isOpen, onClose, onS
       case 'radar': return <RadarIcon size={48} className="text-indigo-500" />;
       case 'treemap': return <TreePine size={48} className="text-indigo-500" />;
       case 'histogram': return <BarChart4 size={48} className="text-indigo-500" />;
+      case 'boxplot': return <BoxSelect size={48} className="text-indigo-500" />;
       default: return <Activity size={48} className="text-indigo-500" />;
     }
   };

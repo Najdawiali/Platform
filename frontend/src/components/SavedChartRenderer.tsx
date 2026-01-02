@@ -9,6 +9,7 @@ import { ProgressiveXYChart } from './ProgressiveXYChart';
 import { SavedTableChart } from './SavedTableChart';
 import { HeatmapChart } from './HeatmapChart';
 import { HistogramChart } from './HistogramChart';
+import { BoxPlotChart } from './BoxPlotChart';
 
 interface SavedChartRendererProps {
   dashboardId: string;
@@ -781,6 +782,36 @@ export const SavedChartRenderer: React.FC<SavedChartRendererProps> = ({ dashboar
         color={color}
         showGrid={showGrid}
         showValues={showValues}
+        height={400}
+      />
+    );
+  }
+
+  // Box Plot
+  if (chart.chart_type === 'boxplot') {
+    const valueCol: string | undefined = (typeof cfg.boxPlotValueColumn === 'string' && cfg.boxPlotValueColumn)
+      ? cfg.boxPlotValueColumn
+      : (chart.x_column || undefined);
+    
+    if (!valueCol) {
+      return <div style={{ padding: '20px', color: '#dc2626' }}>Invalid box plot config - missing value column</div>;
+    }
+
+    const categoryCol: string | undefined = (typeof cfg.boxPlotCategoryColumn === 'string' && cfg.boxPlotCategoryColumn)
+      ? cfg.boxPlotCategoryColumn
+      : undefined;
+    const showOutliers = typeof cfg.boxPlotShowOutliers === 'boolean' ? cfg.boxPlotShowOutliers : true;
+    const boxColor = typeof cfg.boxPlotBoxColor === 'string' ? cfg.boxPlotBoxColor : '#3b82f6';
+    const showGrid = typeof cfg.boxPlotShowGrid === 'boolean' ? cfg.boxPlotShowGrid : true;
+
+    return (
+      <BoxPlotChart
+        data={data}
+        valueColumn={valueCol}
+        categoryColumn={categoryCol}
+        showOutliers={showOutliers}
+        boxColor={boxColor}
+        showGrid={showGrid}
         height={400}
       />
     );
