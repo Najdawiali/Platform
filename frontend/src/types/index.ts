@@ -147,7 +147,7 @@ export interface AuthResponse {
 }
 
 // Dashboard Types
-export type ChartType = 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi';
+export type ChartType = 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'heatmap';
 
 export interface DashboardChart {
   id: string;

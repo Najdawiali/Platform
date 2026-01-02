@@ -8,6 +8,7 @@ import { ProgressiveXYChart } from '../components/ProgressiveXYChart';
 import { GaugeChart } from '../components/GaugeChart';
 import { FunnelChart as FunnelChartComponent } from '../components/FunnelChart';
 import { ScatterPlot } from '../components/ScatterPlot';
+import { HeatmapChart } from '../components/HeatmapChart';
 
 const toNumber = (v: any): number | null => {
   if (v === null || v === undefined) return null;
@@ -326,6 +327,13 @@ const DashboardViewPage: React.FC = () => {
             if (yCol) cols.add(yCol);
             const sortCol = typeof cfg.gaugeSortByColumn === 'string' ? cfg.gaugeSortByColumn : '';
             if (sortCol) cols.add(sortCol);
+          } else if (chart.chart_type === 'heatmap') {
+            const xCol = (typeof chart.x_column === 'string' && chart.x_column) ? chart.x_column : (typeof cfg.xAxis === 'string' ? cfg.xAxis : '');
+            const yCol = (typeof chart.y_column === 'string' && chart.y_column) ? chart.y_column : (typeof cfg.yAxis === 'string' ? cfg.yAxis : '');
+            const valueCol = (typeof cfg.heatmapValueColumn === 'string' && cfg.heatmapValueColumn) ? cfg.heatmapValueColumn : (typeof cfg.valueColumn === 'string' ? cfg.valueColumn : '');
+            if (xCol) cols.add(xCol);
+            if (yCol) cols.add(yCol);
+            if (valueCol) cols.add(valueCol);
           }
           if (cols.size > 0) requestedColumns = Array.from(cols).join(',');
 
@@ -1715,6 +1723,58 @@ const DashboardViewPage: React.FC = () => {
               />
             </RadarChart>
           </ResponsiveContainer>
+        );
+      case 'heatmap':
+        // Extract heatmap config
+        const xAxisCol = chart.config?.xAxis || chart.x_column || '';
+        const yAxisCol = chart.config?.yAxis || chart.y_column || '';
+        const valueCol = chart.config?.heatmapValueColumn || chart.config?.valueColumn || chart.y_column || '';
+        const heatmapAgg = chart.config?.heatmapAggregation || chart.config?.aggregation || 'sum';
+        const heatmapColorScheme = Array.isArray(chart.config?.heatmapColorScheme) 
+          ? chart.config.heatmapColorScheme 
+          : ['#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444'];
+        const heatmapShowValues = typeof chart.config?.heatmapShowValues === 'boolean' 
+          ? chart.config.heatmapShowValues 
+          : true;
+        const heatmapShowGrid = typeof chart.config?.heatmapShowGrid === 'boolean' 
+          ? chart.config.heatmapShowGrid 
+          : true;
+        const heatmapCellBorderWidth = typeof chart.config?.heatmapCellBorderWidth === 'number'
+          ? chart.config.heatmapCellBorderWidth
+          : 1;
+
+        console.log('Heatmap Debug:', {
+          xAxisCol,
+          yAxisCol,
+          valueCol,
+          heatmapAgg,
+          chartConfig: chart.config,
+          chartXColumn: chart.x_column,
+          chartYColumn: chart.y_column,
+          dataLength: data.length,
+          firstRow: data[0]
+        });
+
+        if (!xAxisCol || !yAxisCol || !valueCol) {
+          return (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
+              Heatmap requires X-axis, Y-axis, and value column
+            </div>
+          );
+        }
+
+        return (
+          <HeatmapChart
+            data={data}
+            xColumn={xAxisCol}
+            yColumn={yAxisCol}
+            valueColumn={valueCol}
+            aggregation={heatmapAgg as 'sum' | 'avg' | 'count' | 'min' | 'max'}
+            colorScheme={heatmapColorScheme}
+            showValues={heatmapShowValues}
+            showGrid={heatmapShowGrid}
+            cellBorderWidth={heatmapCellBorderWidth}
+          />
         );
       default:
         return (

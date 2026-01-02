@@ -27,10 +27,11 @@ import {
 import { GaugeChart } from './GaugeChart';
 import { FunnelChart } from './FunnelChart';
 import { ScatterPlot } from './ScatterPlot';
+import { HeatmapChart } from './HeatmapChart';
 import { dashboardService } from '../services/dashboardService';
 import { savedQueryService } from '../services/savedQueryService';
 
-type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'radar' | 'funnel' | 'kpi' | 'gauge' | 'table';
+type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'radar' | 'funnel' | 'kpi' | 'gauge' | 'table' | 'heatmap';
 
 type Aggregation = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 type SortOrder = 'none' | 'x_asc' | 'x_desc' | 'y_asc' | 'y_desc';
@@ -560,6 +561,23 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
       </svg>
     ),
   },
+  heatmap: {
+    label: 'Heatmap',
+    help: 'Show correlation between two categorical dimensions using color intensity.',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="3.5" height="3.5" fill="currentColor" opacity="0.3" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="6" y="2" width="3.5" height="3.5" fill="currentColor" opacity="0.6" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="10" y="2" width="3.5" height="3.5" fill="currentColor" opacity="0.9" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="2" y="6" width="3.5" height="3.5" fill="currentColor" opacity="0.6" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="6" y="6" width="3.5" height="3.5" fill="currentColor" opacity="0.9" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="10" y="6" width="3.5" height="3.5" fill="currentColor" opacity="0.5" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="2" y="10" width="3.5" height="3.5" fill="currentColor" opacity="0.4" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="6" y="10" width="3.5" height="3.5" fill="currentColor" opacity="0.7" stroke="currentColor" strokeWidth="0.8" />
+        <rect x="10" y="10" width="3.5" height="3.5" fill="currentColor" opacity="0.8" stroke="currentColor" strokeWidth="0.8" />
+      </svg>
+    ),
+  },
 };
 
 export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
@@ -685,6 +703,14 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const [scatterSizeBy, setScatterSizeBy] = useState<string>('');
   const [scatterPointOpacity, setScatterPointOpacity] = useState<number>(0.85);
   const [scatterMaxPointSize, setScatterMaxPointSize] = useState<number>(70);
+
+  // Heatmap options
+  const [heatmapAggregation, setHeatmapAggregation] = useState<'sum' | 'avg' | 'count' | 'min' | 'max'>('sum');
+  const [heatmapValueColumn, setHeatmapValueColumn] = useState<string>('');
+  const [heatmapShowValues, setHeatmapShowValues] = useState<boolean>(true);
+  const [heatmapShowGrid, setHeatmapShowGrid] = useState<boolean>(true);
+  const [heatmapCellBorderWidth, setHeatmapCellBorderWidth] = useState<number>(1);
+  const [heatmapColorScheme, setHeatmapColorScheme] = useState<string[]>(['#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444']);
 
   // Global display options
   const [showGrid, setShowGrid] = useState<boolean>(true);
@@ -822,6 +848,14 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (initialConfig.scatterSizeBy) setScatterSizeBy(initialConfig.scatterSizeBy);
       if (typeof initialConfig.scatterPointOpacity === 'number') setScatterPointOpacity(initialConfig.scatterPointOpacity);
       if (typeof initialConfig.scatterMaxPointSize === 'number') setScatterMaxPointSize(initialConfig.scatterMaxPointSize);
+
+      // Heatmap
+      if (initialConfig.heatmapAggregation) setHeatmapAggregation(initialConfig.heatmapAggregation);
+      if (initialConfig.heatmapValueColumn) setHeatmapValueColumn(initialConfig.heatmapValueColumn);
+      if (typeof initialConfig.heatmapShowValues === 'boolean') setHeatmapShowValues(initialConfig.heatmapShowValues);
+      if (typeof initialConfig.heatmapShowGrid === 'boolean') setHeatmapShowGrid(initialConfig.heatmapShowGrid);
+      if (typeof initialConfig.heatmapCellBorderWidth === 'number') setHeatmapCellBorderWidth(initialConfig.heatmapCellBorderWidth);
+      if (Array.isArray(initialConfig.heatmapColorScheme)) setHeatmapColorScheme(initialConfig.heatmapColorScheme);
     }
   }, [initialConfig, isOpen]);
   
@@ -937,6 +971,13 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         cfg.tableEnableAggregation = tableEnableAggregation;
         cfg.tableGroupByColumns = tableGroupByColumns;
         cfg.tableMetrics = tableMetrics;
+      } else if (chartType === 'heatmap') {
+        cfg.heatmapAggregation = heatmapAggregation;
+        cfg.heatmapValueColumn = heatmapValueColumn;
+        cfg.heatmapShowValues = heatmapShowValues;
+        cfg.heatmapShowGrid = heatmapShowGrid;
+        cfg.heatmapCellBorderWidth = heatmapCellBorderWidth;
+        cfg.heatmapColorScheme = heatmapColorScheme;
       }
 
       return { ...common, config: cfg };
@@ -991,6 +1032,12 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       scatterMaxPointSize,
       scatterPointOpacity,
       scatterSizeBy,
+      heatmapAggregation,
+      heatmapValueColumn,
+      heatmapShowValues,
+      heatmapShowGrid,
+      heatmapCellBorderWidth,
+      heatmapColorScheme,
       seriesBy,
       showDataLabels,
       showGrid,
@@ -2174,6 +2221,37 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
               showValue={gaugeShowValue}
             />
           </div>
+        </div>
+      );
+    }
+
+    if (chartType === 'heatmap') {
+      if (!xAxis || !yAxis || !heatmapValueColumn) {
+        return (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>🔥</div>
+              <div style={{ fontSize: '14px', fontWeight: 600 }}>Select X, Y, and Value columns</div>
+              <div style={{ fontSize: '12px', marginTop: '6px' }}>X & Y should be categorical, Value should be numeric</div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+          <HeatmapChart
+            data={rows}
+            xColumn={xAxis}
+            yColumn={yAxis}
+            valueColumn={heatmapValueColumn}
+            aggregation={heatmapAggregation}
+            colorScheme={heatmapColorScheme}
+            showValues={heatmapShowValues}
+            showGrid={heatmapShowGrid}
+            cellBorderWidth={heatmapCellBorderWidth}
+            height={400}
+          />
         </div>
       );
     }
@@ -3985,6 +4063,93 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                   style={{ width: '100%', accentColor: '#4f46e5' }}
                 />
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', marginBottom: '14px' }}>{scatterPointOpacity.toFixed(2)}</div>
+              </>
+            ) : null}
+
+            {chartType === 'heatmap' ? (
+              <>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>HEATMAP SETTINGS</div>
+
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Value column *</div>
+                <select
+                  value={heatmapValueColumn}
+                  onChange={(e) => setHeatmapValueColumn(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <option value="">Select a value column</option>
+                  {numericColumns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Aggregation</div>
+                <select
+                  value={heatmapAggregation}
+                  onChange={(e) => setHeatmapAggregation(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <option value="sum">Sum</option>
+                  <option value="avg">Average</option>
+                  <option value="count">Count</option>
+                  <option value="min">Minimum</option>
+                  <option value="max">Maximum</option>
+                </select>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={heatmapShowValues}
+                    onChange={(e) => setHeatmapShowValues(e.target.checked)}
+                    style={{ marginRight: '8px', accentColor: '#4f46e5' }}
+                  />
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Show values in cells</div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={heatmapShowGrid}
+                    onChange={(e) => setHeatmapShowGrid(e.target.checked)}
+                    style={{ marginRight: '8px', accentColor: '#4f46e5' }}
+                  />
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Show grid lines</div>
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700, marginBottom: '6px' }}>Cell border width</div>
+                <input
+                  type="range"
+                  min={0}
+                  max={4}
+                  step={0.5}
+                  value={heatmapCellBorderWidth}
+                  onChange={(e) => setHeatmapCellBorderWidth(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#4f46e5' }}
+                />
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', marginBottom: '14px' }}>{heatmapCellBorderWidth}px</div>
               </>
             ) : null}
 

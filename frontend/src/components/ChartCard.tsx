@@ -9,6 +9,7 @@ import { GaugeChart } from './GaugeChart';
 import { KPICard } from './KPICard';
 import { TreemapChart } from './TreemapChart';
 import { FunnelChart } from './FunnelChart';
+import { HeatmapChart } from './HeatmapChart';
 
 interface ColumnMetadata {
   name: string;
@@ -53,7 +54,7 @@ interface ScatterConfig {
 
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns?: ColumnSelection[];
@@ -425,6 +426,35 @@ export const ChartCard: React.FC<ChartCardProps> = ({
               height={400}
             />
           )
+        ) : chart.type === 'heatmap' ? (
+          isChartDataLoading ? (
+            <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', gap: '8px' }}>
+              <span style={{ fontSize: '32px' }}>🔄</span> Loading...
+            </div>
+          ) : hasChartDataError || !chartData || chartData.length === 0 ? (
+            <div style={{ height: '400px', backgroundColor: '#f9fafb', border: '2px dashed #d1d5db', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', gap: '12px' }}>
+              <div style={{ fontSize: '48px' }}>🔥</div>
+              <div style={{ fontWeight: 600 }}>{(rowColumns.length < 2 || colColumns.length === 0) ? 'Drag columns to visualize data' : 'No data available'}</div>
+              {(rowColumns.length < 2 || colColumns.length === 0) && (
+                <div style={{ fontSize: '14px', color: '#9ca3af' }}>Drag 2 categorical columns to Rows (X & Y axis) and 1 numeric to Columns (value)</div>
+              )}
+            </div>
+          ) : (
+            <HeatmapChart
+              data={chartData}
+              xColumn={(rowColumns[0])?.displayName || 'x'}
+              yColumn={(rowColumns[1])?.displayName || 'y'}
+              valueColumn={(colColumns[0])?.displayName || 'value'}
+              aggregation={chart.heatmapConfig?.aggregation || 'sum'}
+              colorScheme={chart.heatmapConfig?.colorScheme}
+              showValues={chart.heatmapConfig?.showValues}
+              showGrid={chart.heatmapConfig?.showGrid}
+              cellBorderWidth={chart.heatmapConfig?.cellBorderWidth}
+              height={400}
+              isLoading={isChartDataLoading}
+              hasError={hasChartDataError}
+            />
+          )
         ) : null}
       </div>
       
@@ -439,6 +469,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
         {chart.type === 'gauge' && "Gauge charts show progress toward a goal."}
         {chart.type === 'kpi' && "KPIs communicate the amount of progress made toward a measurable goal."}
         {chart.type === 'table' && "Tables work well with quantitative comparisons where you're looking at many values for a single category."}
+        {chart.type === 'heatmap' && "Heatmaps show the relationship between two categorical dimensions using color intensity. Perfect for correlation analysis and pattern detection."}
         {chart.type === 'treemap' && "Treemaps display hierarchical data as a set of nested rectangles."}
         {chart.type === 'funnel' && "Funnel charts help visualize a process that has stages."}
       </div>

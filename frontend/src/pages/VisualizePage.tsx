@@ -85,9 +85,17 @@ interface AreaConfig {
   colors: string[];
 }
 
+interface HeatmapConfig {
+  aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max';
+  colorScheme: string[];
+  showValues: boolean;
+  showGrid: boolean;
+  cellBorderWidth: number;
+}
+
 interface ChartConfig {
   id: string;
-  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel';
+  type: 'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap';
   title: string;
   columnSelections: ColumnSelection[];
   rowColumns: ColumnSelection[];  // X-axis (rows in Tableau)
@@ -98,6 +106,7 @@ interface ChartConfig {
   pieConfig?: PieConfig;
   lineConfig?: LineConfig;
   areaConfig?: AreaConfig;
+  heatmapConfig?: HeatmapConfig;
 }
 
 // Helper function to detect column type based on data
@@ -248,7 +257,7 @@ export const VisualizePage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('design');
   const [charts, setCharts] = useState<ChartConfig[]>([]);
-  const [selectedChartType, setSelectedChartType] = useState<'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel'>('bar');
+  const [selectedChartType, setSelectedChartType] = useState<'bar' | 'pie' | 'line' | 'table' | 'area' | 'scatter' | 'gauge' | 'kpi' | 'treemap' | 'funnel' | 'heatmap'>('bar');
   const [hoveredChartType, setHoveredChartType] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [editingChartId, setEditingChartId] = useState<string | null>(null);
@@ -603,7 +612,8 @@ export const VisualizePage: React.FC = () => {
       gauge: 'Gauge',
       kpi: 'KPI',
       funnel: 'Funnel',
-      treemap: 'Treemap'
+      treemap: 'Treemap',
+      heatmap: 'Heatmap'
     };
 
     const newChart: ChartConfig = {
@@ -678,6 +688,15 @@ export const VisualizePage: React.FC = () => {
           showGrid: true,
           fillOpacity: 0.6,
           colors: COLORS
+        }
+      }),
+      ...(selectedChartType === 'heatmap' && {
+        heatmapConfig: {
+          aggregation: 'sum',
+          colorScheme: ['#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444'],
+          showValues: true,
+          showGrid: true,
+          cellBorderWidth: 1
         }
       })
     };
@@ -1616,6 +1635,50 @@ export const VisualizePage: React.FC = () => {
     return getTreemapData(chart);
   };
 
+  const getHeatmapData = (chart: ChartConfig) => {
+    const hasRowsCols = chart.rowColumns.length > 0 || chart.colColumns.length > 0;
+    if (!hasRowsCols) {
+      console.log('🔥 Heatmap needs row and column dimensions');
+      return [];
+    }
+
+    const chartData = getChartData(chart);
+    if (chartData.length === 0) return [];
+
+    // For heatmap, we need: 2 categorical (rowColumns) and 1 numeric (colColumns)
+    // rowColumns[0] = X-axis, rowColumns[1] = Y-axis, colColumns[0] = value
+    const xAxisCol = chart.rowColumns[0];
+    const yAxisCol = chart.rowColumns[1];
+    const valueCol = chart.colColumns[0];
+
+    if (!xAxisCol || !yAxisCol || !valueCol) {
+      console.log('🔥 Heatmap needs 2 row columns (X, Y) and 1 value column');
+      return [];
+    }
+
+    // Build flat data array for HeatmapChart component
+    const flatData: any[] = [];
+    
+    const xData = chartData.find(r => r.selection.datasetId === xAxisCol.datasetId && r.selection.columnName === xAxisCol.columnName);
+    const yData = chartData.find(r => r.selection.datasetId === yAxisCol.datasetId && r.selection.columnName === yAxisCol.columnName);
+    const vData = chartData.find(r => r.selection.datasetId === valueCol.datasetId && r.selection.columnName === valueCol.columnName);
+
+    if (!xData || !yData || !vData) return [];
+
+    const length = Math.min(xData.data?.length || 0, yData.data?.length || 0, vData.data?.length || 0);
+    
+    for (let i = 0; i < length; i++) {
+      flatData.push({
+        [xAxisCol.displayName]: xData.data[i],
+        [yAxisCol.displayName]: yData.data[i],
+        [valueCol.displayName]: vData.data[i]
+      });
+    }
+
+    console.log('🔥 Heatmap data:', flatData.length, 'rows');
+    return flatData;
+  };
+
   const isChartDataLoading = chartDataQueries.isLoading;
   const hasChartDataError = chartDataQueries.isError;
 
@@ -2001,6 +2064,7 @@ export const VisualizePage: React.FC = () => {
                     <option value="gauge">🎯 Gauge Chart</option>
                     <option value="kpi">💯 KPI Card</option>
                     <option value="table">📋 Table</option>
+                    <option value="heatmap">🔥 Heatmap</option>
                     <option value="treemap">🔲 Treemap</option>
                     <option value="funnel">🔻 Funnel Chart</option>
                   </select>
@@ -2015,6 +2079,7 @@ export const VisualizePage: React.FC = () => {
                   {selectedChartType === 'gauge' && '🎯 Progress indicator. Best for showing completion (0-100%).'}
                   {selectedChartType === 'kpi' && '💯 Single metric display. Best for headline numbers.'}
                   {selectedChartType === 'table' && '📋 Raw data view. Best for detailed inspection.'}
+                  {selectedChartType === 'heatmap' && '🔥 Correlation matrix. Best for comparing two categorical dimensions (region × product, day × hour).'}
                   {selectedChartType === 'treemap' && '🔲 Nested rectangles. Best for hierarchical data and proportions.'}
                   {selectedChartType === 'funnel' && '🔻 Process stages. Best for conversion rates and pipelines.'}
                 </div>
@@ -2056,6 +2121,7 @@ export const VisualizePage: React.FC = () => {
                     { type: 'gauge' as const, icon: '🎯', label: 'Gauge Chart', tooltip: 'Progress indicator toward a goal. Best for showing completion percentage (0-100%).' },
                     { type: 'kpi' as const, icon: '💯', label: 'KPI Card', tooltip: 'Big number metric with trend. Best for highlighting key performance indicators.' },
                     { type: 'table' as const, icon: '📋', label: 'Table', tooltip: 'Display raw data in rows and columns. Best for detailed data inspection.' },
+                    { type: 'heatmap' as const, icon: '🔥', label: 'Heatmap', tooltip: 'Correlation matrix. Best for analyzing relationships between two categorical dimensions.' },
                   ].map(({ type, icon, label, tooltip }) => (
                     <div key={type} style={{ position: 'relative' }}>
                       <button
@@ -2127,7 +2193,7 @@ export const VisualizePage: React.FC = () => {
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {charts.map((chart, idx) => {
-                      const icons: Record<string, string> = { bar: '📊', pie: '🥧', line: '📈', table: '📋', area: '📉', scatter: '⚪', gauge: '🎯', kpi: '💯' };
+                      const icons: Record<string, string> = { bar: '📊', pie: '🥧', line: '📈', table: '📋', area: '📉', scatter: '⚪', gauge: '🎯', kpi: '💯', heatmap: '🔥' };
                       return (
                         <div
                           key={chart.id}
@@ -2546,6 +2612,7 @@ export const VisualizePage: React.FC = () => {
                           chart.type === 'gauge' ? getGaugeKpiData(chart) :
                           chart.type === 'kpi' ? getGaugeKpiData(chart) :
                           chart.type === 'table' ? getTableData(chart) :
+                          chart.type === 'heatmap' ? getHeatmapData(chart) :
                           chart.type === 'treemap' ? getTreemapData(chart) :
                           chart.type === 'funnel' ? getFunnelData(chart) :
                           []

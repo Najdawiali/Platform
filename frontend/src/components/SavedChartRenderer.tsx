@@ -7,6 +7,7 @@ import { GaugeChart } from './GaugeChart';
 import { FunnelChart } from './FunnelChart';
 import { ProgressiveXYChart } from './ProgressiveXYChart';
 import { SavedTableChart } from './SavedTableChart';
+import { HeatmapChart } from './HeatmapChart';
 
 interface SavedChartRendererProps {
   dashboardId: string;
@@ -719,6 +720,38 @@ export const SavedChartRenderer: React.FC<SavedChartRendererProps> = ({ dashboar
           {formatted}
         </div>
       </div>
+    );
+  }
+
+  // Heatmap
+  if (chart.chart_type === 'heatmap') {
+    const xCol: string | undefined = chart.x_column || (typeof cfg.xAxis === 'string' ? cfg.xAxis : undefined);
+    const yCol: string | undefined = chart.y_column || (typeof cfg.yAxis === 'string' ? cfg.yAxis : undefined);
+    const valueCol: string | undefined = typeof cfg.valueColumn === 'string' ? cfg.valueColumn : undefined;
+    
+    if (!xCol || !yCol || !valueCol) {
+      return <div style={{ padding: '20px', color: '#dc2626' }}>Invalid heatmap config - missing x, y, or value column</div>;
+    }
+
+    const aggregation = typeof cfg.heatmapAggregation === 'string' ? cfg.heatmapAggregation : 'sum';
+    const colorScheme = Array.isArray(cfg.heatmapColorScheme) ? cfg.heatmapColorScheme : undefined;
+    const showValues = typeof cfg.heatmapShowValues === 'boolean' ? cfg.heatmapShowValues : true;
+    const showGrid = typeof cfg.heatmapShowGrid === 'boolean' ? cfg.heatmapShowGrid : true;
+    const cellBorderWidth = toNumber(cfg.heatmapCellBorderWidth) ?? 1;
+
+    return (
+      <HeatmapChart
+        data={data}
+        xColumn={xCol}
+        yColumn={yCol}
+        valueColumn={valueCol}
+        aggregation={aggregation as any}
+        colorScheme={colorScheme}
+        showValues={showValues}
+        showGrid={showGrid}
+        cellBorderWidth={cellBorderWidth}
+        height={400}
+      />
     );
   }
 
