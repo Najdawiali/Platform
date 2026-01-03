@@ -1224,8 +1224,12 @@ const DashboardViewPage: React.FC = () => {
       );
     }
     
-    // For non-table charts, validate x column (y column is optional for bar charts - they can count)
-    if (!chart.x_column) {
+    // Special chart types that handle their own data processing and may not need x_column
+    const specialChartTypes = ['histogram', 'heatmap', 'gauge', 'kpi', 'scatter', 'funnel', 'radar', 'treemap', 'boxplot'];
+    const isSpecialChart = specialChartTypes.includes(chart.chart_type);
+    
+    // For non-table and non-special charts, validate x column (y column is optional for bar charts - they can count)
+    if (!isSpecialChart && !chart.x_column) {
       return (
         <div style={{
           backgroundColor: '#fef2f2',
@@ -1242,10 +1246,6 @@ const DashboardViewPage: React.FC = () => {
         </div>
       );
     }
-    
-    // Special chart types that handle their own data processing
-    const specialChartTypes = ['histogram', 'heatmap', 'gauge', 'kpi', 'scatter', 'funnel', 'radar', 'treemap', 'boxplot'];
-    const isSpecialChart = specialChartTypes.includes(chart.chart_type);
     
     // Use raw data directly - no aggregation
     // Map data to recharts format: name (x-axis), value (y-axis)
