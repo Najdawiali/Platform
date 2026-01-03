@@ -170,6 +170,7 @@ export interface Dashboard {
   user_id: string;
   name: string;
   description?: string;
+  is_insight?: boolean;
   is_main?: boolean;
   is_private?: boolean;
   created_at: string;
@@ -231,6 +232,13 @@ export interface ChartConfig {
   dateRange?: {
     start: Date | null;
     end: Date | null;
+  };
+  heatmapConfig?: {
+    aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+    colorScheme?: string[];
+    showValues?: boolean;
+    showGrid?: boolean;
+    cellBorderWidth?: number;
   };
 }
 

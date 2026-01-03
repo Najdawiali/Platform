@@ -764,15 +764,8 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     );
   }
 
-  const chartTitle = typeof cfg.chartTitle === 'string' && cfg.chartTitle.trim() ? cfg.chartTitle : null;
-
   return (
     <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, background: 'white' }}>
-      {chartTitle && (
-        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
-          {chartTitle}
-        </div>
-      )}
       {legend}
       <div
         ref={scrollContainerRef}

@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { ResponsiveContainer, Tooltip } from 'recharts';
 
 interface BoxPlotChartProps {
   data: any[];

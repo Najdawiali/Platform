@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ResponsiveContainer, Tooltip } from 'recharts';
+import { ResponsiveContainer } from 'recharts';
 
 interface HeatmapChartProps {
   data: any[];

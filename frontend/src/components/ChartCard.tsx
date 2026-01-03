@@ -61,6 +61,13 @@ interface ChartConfig {
   colColumns?: ColumnSelection[];
   gaugeConfig?: GaugeConfig;
   scatterConfig?: ScatterConfig;
+  heatmapConfig?: {
+    aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+    colorScheme?: string[];
+    showValues?: boolean;
+    showGrid?: boolean;
+    cellBorderWidth?: number;
+  };
 }
 
 interface Dataset {

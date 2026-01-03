@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BarChart3, Type, LayoutTemplate, Share2, Send, GripVertical, MoreVertical, Maximize2, Trash2, X, Upload } from 'lucide-react';
+import { ArrowLeft, BarChart3, Type, LayoutTemplate, GripVertical, MoreVertical, Maximize2, Trash2, X, Upload } from 'lucide-react';
 import { LibraryModal } from '../components/LibraryModal';
 import { dashboardService } from '../services/dashboardService';
 import { ProgressiveXYChart } from '../components/ProgressiveXYChart';
@@ -195,6 +195,8 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
     <div 
       ref={cardRef}
       draggable={isDraggable}
+      onMouseEnter={() => setIsDraggable(true)}
+      onMouseLeave={() => setIsDraggable(false)}
       onDragStart={(e) => {
           e.stopPropagation();
           onDragStart(index, parentId);
@@ -342,7 +344,7 @@ const DraggableInsightCard: React.FC<DraggableInsightCardProps> = ({ item, index
                         <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '4px 0' }} />
                         <button
                             onClick={() => {
-                                onRemove(index);
+                            onRemove(index, parentId);
                                 setShowMoreMenu(false);
                             }}
                             style={{
@@ -777,175 +779,10 @@ const DraggableTextCard: React.FC<DraggableInsightCardProps> = ({ item, index, p
 };
 
 const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index, parentId, onDragStart, onDragEnter, onDragEnd, onUpdate, onRemove }) => {
-  const navigate = useNavigate();
   const [isDraggable, setIsDraggable] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [title, setTitle] = useState(item.content.title || 'MAIN SECTION');
-  const [isPublishing, setIsPublishing] = useState(false);
+  const title = item.content.title || 'MAIN SECTION';
   const cardRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditingTitle && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isEditingTitle]);
-
-  const handlePublishSection = async () => {
-    const sectionItems = item.content.items || [];
-    
-    if (sectionItems.length === 0) {
-      alert('Cannot publish an empty section. Please add at least one chart.');
-      return;
-    }
-
-    // Validate that all items are insights with chart data
-    const insights = sectionItems.filter((i: CanvasItem) => i.type === 'insight');
-    if (insights.length === 0) {
-      alert('Section must contain at least one insight/chart to publish.');
-      return;
-    }
-
-    setIsPublishing(true);
-    try {
-      // Get section container width to calculate proportional widths
-      const sectionWidth = contentRef.current?.getBoundingClientRect().width || 1200;
-      
-      // Collect text blocks to add to description
-      const textBlocks = sectionItems
-        .filter((i: CanvasItem) => i.type === 'text')
-        .map((i: CanvasItem) => i.content.text)
-        .filter(Boolean);
-      
-      const description = textBlocks.length > 0 
-        ? `Published from section: ${title}\n\n${textBlocks.join('\n\n')}`
-        : `Published from section: ${title}`;
-      
-      // Prepare charts data preserving the layout
-      let currentY = 0; // Track vertical position (in grid units)
-      let currentRowX = 0; // Track horizontal position in current row
-      let currentRowHeight = 0; // Track height of current row
-      
-      const charts = insights.map((insight: CanvasItem, idx: number) => {
-        const { dashboardId, chart } = insight.content;
-        
-        // Calculate grid width (12-column system)
-        // Parse width from CSS values like '100%', 'calc(50% - 12px)', or '600px'
-        let gridWidth = 12; // Default full width
-        if (insight.width) {
-          const widthStr = insight.width;
-          if (widthStr.includes('%')) {
-            const percentage = parseInt(widthStr);
-            gridWidth = Math.round((percentage / 100) * 12);
-          } else if (widthStr.includes('px')) {
-            const pixels = parseInt(widthStr);
-            const percentage = (pixels / sectionWidth) * 100;
-            gridWidth = Math.round((percentage / 100) * 12);
-          } else if (widthStr.includes('calc')) {
-            // Handle calc expressions like 'calc(50% - 12px)'
-            if (widthStr.includes('50%')) gridWidth = 6;
-            else if (widthStr.includes('33%')) gridWidth = 4;
-            else if (widthStr.includes('66%')) gridWidth = 8;
-            else if (widthStr.includes('25%')) gridWidth = 3;
-            else if (widthStr.includes('75%')) gridWidth = 9;
-          }
-        }
-        
-        // Constrain to valid grid values
-        gridWidth = Math.max(1, Math.min(12, gridWidth));
-        
-        // Calculate grid height - add extra space for better visibility
-        let gridHeight = 5; // Increased default height for better spacing
-        if (insight.height) {
-          const heightStr = insight.height;
-          if (heightStr.includes('px')) {
-            const pixels = parseInt(heightStr);
-            // Increase height calculation for proper spacing (add 50px for gaps)
-            gridHeight = Math.max(4, Math.round((pixels + 50) / 100));
-          }
-        }
-        
-        // Calculate position based on layout flow
-        let posX = currentRowX;
-        let posY = currentY;
-        
-        // Check if chart fits in current row
-        if (currentRowX + gridWidth > 12) {
-          // Move to next row
-          currentY += currentRowHeight;
-          currentRowX = 0;
-          currentRowHeight = 0;
-          posX = 0;
-          posY = currentY;
-        }
-        
-        // Update tracking variables
-        currentRowX += gridWidth;
-        currentRowHeight = Math.max(currentRowHeight, gridHeight);
-        
-        // If this chart takes full width, move to next row for next chart
-        if (gridWidth === 12) {
-          currentY += gridHeight;
-          currentRowX = 0;
-          currentRowHeight = 0;
-        }
-        
-        return {
-          dataset_id: chart.dataset_id,
-          chart_type: chart.chart_type,
-          x_column: chart.x_column || null,
-          y_column: chart.y_column || null,
-          title: chart.title || insight.content.title,
-          config: chart.config || {},
-          position_x: posX,
-          position_y: posY,
-          width: gridWidth,
-          height: gridHeight
-        };
-      });
-
-      // Create the dashboard
-      const dashboardPayload = {
-        name: title,
-        description: description,
-        charts: charts
-      };
-
-      console.log('Publishing dashboard with payload:', {
-        name: dashboardPayload.name,
-        chartCount: charts.length,
-        charts: charts.map(c => ({
-          title: c.title,
-          position: `(${c.position_x}, ${c.position_y})`,
-          size: `${c.width}x${c.height}`,
-          type: c.chart_type
-        }))
-      });
-
-      const createdDashboard = await dashboardService.createDashboard(dashboardPayload);
-      
-      // Invalidate dashboards cache so the new dashboard appears in the list
-      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
-      
-      // Success feedback
-      alert(`Dashboard "${title}" published successfully! A new section has been created.`);
-      
-      // Remove the published section from canvas (a new one will auto-create)
-      onRemove(index, parentId);
-    } catch (error: any) {
-      console.error('Failed to publish section:', error);
-      alert(`Failed to publish dashboard: ${error.response?.data?.detail || error.message}`);
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
-  const handleTitleSubmit = () => {
-    setIsEditingTitle(false);
-    onUpdate(index, { content: { ...item.content, title } }, parentId);
-  };
 
   const handleResizeStart = (e: React.MouseEvent, direction: 'width' | 'height' | 'both') => {
     e.preventDefault();
@@ -1001,7 +838,10 @@ const DraggableSectionCard: React.FC<DraggableInsightCardProps> = ({ item, index
   return (
     <div 
       ref={cardRef}
+      aria-label={title}
       draggable={isDraggable}
+      onMouseEnter={() => setIsDraggable(true)}
+      onMouseLeave={() => setIsDraggable(false)}
       onDragStart={(e) => {
           e.stopPropagation();
           onDragStart(index, parentId);
@@ -1358,26 +1198,6 @@ export const CreateDashboardPage: React.FC = () => {
     setShowTextMenu(false);
   };
 
-  const handleSectionAdd = () => {
-    // Only allow one section at a time
-    const existingSection = canvasItems.find(item => item.type === 'section');
-    if (existingSection) {
-      alert('You can only create one section at a time. Publish the current section before creating a new one.');
-      return;
-    }
-    
-    setCanvasItems(prev => [...prev, {
-      id: Math.random().toString(36).substr(2, 9),
-      type: 'section',
-      content: {
-        title: 'MAIN SECTION',
-        items: []
-      },
-      width: '100%',
-      height: '300px'
-    }]);
-  };
-
   const handleInsightSelect = async (insightSummary: any) => {
     try {
       const dashboard = await dashboardService.getDashboard(insightSummary.id);
@@ -1409,150 +1229,6 @@ export const CreateDashboardPage: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to load insight details", error);
-    }
-  };
-
-  const handleSaveDashboard = async () => {
-    // Collect all insights from canvas
-    const allInsights = canvasItems.filter(item => item.type === 'insight');
-    
-    if (allInsights.length === 0) {
-      alert('Cannot save an empty dashboard. Please add at least one chart.');
-      return;
-    }
-
-    let dashboardName = 'New Dashboard';
-    
-    // Only prompt for name when creating new dashboard
-    if (!editDashboardId) {
-      const promptedName = prompt('Enter dashboard name:', 'New Dashboard');
-      if (!promptedName) return;
-      dashboardName = promptedName;
-    }
-
-    setIsLoadingDashboard(true);
-    try {
-      // Get container width for calculations
-      const containerWidth = 1200; // Default width
-      
-      // Prepare charts data preserving the layout
-      let currentY = 0;
-      let currentRowX = 0;
-      let currentRowHeight = 0;
-      
-      const charts = allInsights.map((insight: CanvasItem) => {
-        const { dashboardId, chart } = insight.content;
-        
-        // Calculate grid width (12-column system)
-        let gridWidth = 12;
-        if (insight.width) {
-          const widthStr = insight.width;
-          if (widthStr.includes('%')) {
-            const percentage = parseInt(widthStr);
-            gridWidth = Math.round((percentage / 100) * 12);
-          } else if (widthStr.includes('px')) {
-            const pixels = parseInt(widthStr);
-            const percentage = (pixels / containerWidth) * 100;
-            gridWidth = Math.round((percentage / 100) * 12);
-          } else if (widthStr.includes('calc')) {
-            if (widthStr.includes('50%')) gridWidth = 6;
-            else if (widthStr.includes('33%')) gridWidth = 4;
-            else if (widthStr.includes('66%')) gridWidth = 8;
-            else if (widthStr.includes('25%')) gridWidth = 3;
-            else if (widthStr.includes('75%')) gridWidth = 9;
-          }
-        }
-        
-        gridWidth = Math.max(1, Math.min(12, gridWidth));
-        
-        // Calculate grid height
-        let gridHeight = 5;
-        if (insight.height) {
-          const heightStr = insight.height;
-          if (heightStr.includes('px')) {
-            const pixels = parseInt(heightStr);
-            gridHeight = Math.max(4, Math.round((pixels + 50) / 100));
-          }
-        }
-        
-        // Calculate position based on layout flow
-        let posX = currentRowX;
-        let posY = currentY;
-        
-        // Check if chart fits in current row
-        if (currentRowX + gridWidth > 12) {
-          currentY += currentRowHeight;
-          currentRowX = 0;
-          currentRowHeight = 0;
-          posX = 0;
-          posY = currentY;
-        }
-        
-        // Update tracking variables
-        currentRowX += gridWidth;
-        currentRowHeight = Math.max(currentRowHeight, gridHeight);
-        
-        // If this chart takes full width, move to next row for next chart
-        if (gridWidth === 12) {
-          currentY += gridHeight;
-          currentRowX = 0;
-          currentRowHeight = 0;
-        }
-        
-        return {
-          dataset_id: chart.dataset_id,
-          chart_type: chart.chart_type,
-          x_column: chart.x_column || null,
-          y_column: chart.y_column || null,
-          title: chart.title || insight.content.title,
-          config: chart.config || {},
-          position_x: posX,
-          position_y: posY,
-          width: gridWidth,
-          height: gridHeight
-        };
-      });
-
-      const dashboardPayload = {
-        name: dashboardName,
-        description: `Created with ${charts.length} chart(s)`,
-        charts: charts
-      };
-
-      if (editDashboardId) {
-        // Update existing dashboard - delete old charts and create new ones
-        const dashboard = await dashboardService.getDashboard(editDashboardId);
-        
-        // Delete all existing charts
-        for (const chart of dashboard.charts) {
-          await dashboardService.deleteChart(editDashboardId, chart.id);
-        }
-        
-        // Update dashboard description (keep existing name)
-        await dashboardService.updateDashboard(editDashboardId, {
-          description: dashboardPayload.description
-        });
-        
-        // Add new charts
-        for (const chart of charts) {
-          await dashboardService.addChart(editDashboardId, chart);
-        }
-        
-        alert('Dashboard updated successfully!');
-        navigate(`/dashboards/${editDashboardId}`);
-      } else {
-        // Create new dashboard
-        const createdDashboard = await dashboardService.createDashboard(dashboardPayload);
-        
-        if (window.confirm(`Dashboard "${dashboardName}" created successfully!\n\nWould you like to view it now?`)) {
-          navigate(`/dashboards/${createdDashboard.id}`);
-        }
-      }
-    } catch (error: any) {
-      console.error('Failed to save dashboard:', error);
-      alert(`Failed to save dashboard: ${error.response?.data?.detail || error.message}`);
-    } finally {
-      setIsLoadingDashboard(false);
     }
   };
 
@@ -1790,7 +1466,7 @@ export const CreateDashboardPage: React.FC = () => {
                     let currentRowHeight = 0;
                     
                     const charts = insights.map((insight: CanvasItem) => {
-                      const { dashboardId, chart } = insight.content;
+                      const { chart } = insight.content;
                       let gridWidth = 12;
                       if (insight.width) {
                         const widthStr = insight.width;
@@ -1942,7 +1618,7 @@ export const CreateDashboardPage: React.FC = () => {
                     let currentRowHeight = 0;
                     
                     const charts = insights.map((insight: CanvasItem) => {
-                      const { dashboardId, chart } = insight.content;
+                      const { chart } = insight.content;
                       let gridWidth = 12;
                       if (insight.width) {
                         const widthStr = insight.width;
@@ -2013,7 +1689,7 @@ export const CreateDashboardPage: React.FC = () => {
                       charts: charts
                     };
 
-                    const createdDashboard = await dashboardService.createDashboard(dashboardPayload);
+                    await dashboardService.createDashboard(dashboardPayload);
                     queryClient.invalidateQueries({ queryKey: ['dashboards'] });
                     alert(`Dashboard "${section.content.title}" published successfully! A new section has been created.`);
                     

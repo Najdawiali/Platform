@@ -11,6 +11,7 @@ import { ScatterPlot } from '../components/ScatterPlot';
 import { HeatmapChart } from '../components/HeatmapChart';
 import { HistogramChart } from '../components/HistogramChart';
 import { BoxPlotChart } from '../components/BoxPlotChart';
+import { Image, FileDown, Trash2, MoreVertical } from 'lucide-react';
 
 const toNumber = (v: any): number | null => {
   if (v === null || v === undefined) return null;
@@ -408,19 +409,26 @@ const DashboardViewPage: React.FC = () => {
   const [showChartMenu, setShowChartMenu] = useState(false);
   const chartMenuRef = useRef<HTMLDivElement>(null);
   
+  // Chart menu state for dashboard view (track which chart menu is open)
+  const [openChartMenuId, setOpenChartMenuId] = useState<string | null>(null);
+  const dashboardChartMenuRef = useRef<HTMLDivElement>(null);
+  
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (chartMenuRef.current && !chartMenuRef.current.contains(event.target as Node)) {
         setShowChartMenu(false);
       }
+      if (dashboardChartMenuRef.current && !dashboardChartMenuRef.current.contains(event.target as Node)) {
+        setOpenChartMenuId(null);
+      }
     };
     
-    if (showChartMenu) {
+    if (showChartMenu || openChartMenuId) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showChartMenu]);
+  }, [showChartMenu, openChartMenuId]);
 
   const renderChart = (chart: any, chartData: any) => {
     const cfg = chart.config || {};
@@ -1158,7 +1166,6 @@ const DashboardViewPage: React.FC = () => {
 
         return (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, marginBottom: '8px' }}>{yCol}</div>
             <div style={{ fontSize: '72px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>{formatted}</div>
           </div>
         );
@@ -1227,7 +1234,6 @@ const DashboardViewPage: React.FC = () => {
               value={gaugeValue}
               minValue={minValue}
               maxValue={computedMax}
-              title={yCol}
               unit={unit}
               decimals={decimals}
               prefix={prefix}
@@ -2426,7 +2432,6 @@ const DashboardViewPage: React.FC = () => {
                       const boxPlotBoxColor = typeof cfg.boxPlotBoxColor === 'string' ? cfg.boxPlotBoxColor : '#3b82f6';
                       const boxPlotShowGrid = typeof cfg.boxPlotShowGrid === 'boolean' ? cfg.boxPlotShowGrid : true;
                       const isBoxPlot = sqlInsight.chart.chart_type === 'boxplot';
-                      const isFunnel = sqlInsight.chart.chart_type === 'funnel';
 
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
@@ -3177,7 +3182,10 @@ const DashboardViewPage: React.FC = () => {
                       padding: '16px 20px',
                       borderBottom: '1px solid #f1f5f9',
                       backgroundColor: '#f8fafc',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
                     }}>
                       <h3 style={{
                         fontSize: '16px',
@@ -3187,24 +3195,211 @@ const DashboardViewPage: React.FC = () => {
                       }}>
                         {chart.title || `${chart.chart_type.charAt(0).toUpperCase() + chart.chart_type.slice(1)} Chart`}
                       </h3>
+                      
+                      {/* Chart Menu */}
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenChartMenuId(openChartMenuId === chart.id ? null : chart.id);
+                          }}
+                          style={{
+                            padding: '6px',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: '#64748b',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            lineHeight: 1,
+                            transition: 'background-color 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <MoreVertical size={18} />
+                        </button>
+                        
+                        {openChartMenuId === chart.id && (
+                          <div 
+                            ref={dashboardChartMenuRef}
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: '100%',
+                              marginTop: '4px',
+                              backgroundColor: 'white',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '8px',
+                              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
+                              zIndex: 100,
+                              minWidth: '180px',
+                              overflow: 'hidden'
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {/* Export as PNG */}
+                            <button
+                              onClick={async () => {
+                                setOpenChartMenuId(null);
+                                const chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`);
+                                if (chartElement) {
+                                  try {
+                                    const html2canvas = (await import('html2canvas')).default;
+                                    const canvas = await html2canvas(chartElement as HTMLElement, {
+                                      backgroundColor: '#ffffff',
+                                      scale: 2
+                                    });
+                                    const link = document.createElement('a');
+                                    link.download = `${chart.title || 'chart'}.png`;
+                                    link.href = canvas.toDataURL();
+                                    link.click();
+                                  } catch (error) {
+                                    console.error('Failed to export PNG:', error);
+                                    alert('Failed to export chart as PNG. Please try again.');
+                                  }
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 16px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                color: '#334155',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                transition: 'background-color 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <Image size={16} />
+                              <span>Export as PNG</span>
+                            </button>
+                            
+                            {/* Export as CSV */}
+                            <button
+                              onClick={async () => {
+                                setOpenChartMenuId(null);
+                                if (chartData?.data && chartData.data.length > 0) {
+                                  try {
+                                    const headers = Object.keys(chartData.data[0]);
+                                    const csvRows = [
+                                      headers.join(','),
+                                      ...chartData.data.map((row: any) => 
+                                        headers.map(header => {
+                                          const val = row[header];
+                                          if (val === null || val === undefined) return '';
+                                          const strVal = String(val);
+                                          if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+                                            return `"${strVal.replace(/"/g, '""')}"`;
+                                          }
+                                          return strVal;
+                                        }).join(',')
+                                      )
+                                    ];
+                                    const csvContent = csvRows.join('\n');
+                                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                    const link = document.createElement('a');
+                                    link.download = `${chart.title || 'chart'}_data.csv`;
+                                    link.href = URL.createObjectURL(blob);
+                                    link.click();
+                                    URL.revokeObjectURL(link.href);
+                                  } catch (error) {
+                                    console.error('Failed to export CSV:', error);
+                                    alert('Failed to export chart data. Please try again.');
+                                  }
+                                } else {
+                                  alert('No chart data available to export.');
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 16px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                color: '#334155',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                transition: 'background-color 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <FileDown size={16} />
+                              <span>Export as CSV</span>
+                            </button>
+                            
+                            {/* Delete Chart */}
+                            <button
+                              onClick={async () => {
+                                setOpenChartMenuId(null);
+                                if (window.confirm(`Are you sure you want to delete "${chart.title || 'this chart'}" from the dashboard?`)) {
+                                  try {
+                                    await dashboardService.deleteChart(id!, chart.id);
+                                    // Refresh the dashboard data
+                                    window.location.reload();
+                                  } catch (error) {
+                                    console.error('Failed to delete chart:', error);
+                                    alert('Failed to delete chart. Please try again.');
+                                  }
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 16px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                color: '#dc2626',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                transition: 'background-color 0.15s ease',
+                                borderTop: '1px solid #f1f5f9'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#fef2f2';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
+                            >
+                              <Trash2 size={16} />
+                              <span>Delete Chart</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Chart Content */}
-                    <div style={{ 
-                      flex: 1, 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      minHeight: 0,
-                      height: '100%',
-                      position: 'relative'
-                    }}>
-                      {/* Inner Title (from config) */}
-                      {chart.config?.chartTitle && (
-                        <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', padding: '12px 20px 0', flexShrink: 0 }}>
-                          {chart.config.chartTitle}
-                        </div>
-                      )}
-
+                    <div 
+                      data-chart-id={chart.id}
+                      style={{ 
+                        flex: 1, 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        minHeight: 0,
+                        height: '100%',
+                        position: 'relative'
+                      }}
+                    >
                       <div style={{ 
                         flex: 1, 
                         minHeight: 0,

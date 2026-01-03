@@ -204,33 +204,50 @@ const DashboardsPage: React.FC = () => {
             <div style={{
               backgroundColor: 'white',
               borderRadius: '16px',
-              border: '2px dashed #e2e8f0',
-              padding: '80px 32px',
-              textAlign: 'center'
+              border: '1px solid #e2e8f0',
+              padding: '64px 48px',
+              textAlign: 'center',
+              maxWidth: '600px',
+              margin: '40px auto',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
             }}>
-              <div style={{ fontSize: '80px', marginBottom: '24px', opacity: 0.5 }}>📊</div>
-              <h3 style={{ fontSize: '24px', fontWeight: 700, color: '#0f172a', marginBottom: '12px', letterSpacing: '-0.5px' }}>
-                No dashboards yet
+              <div style={{
+                width: '80px',
+                height: '80px',
+                backgroundColor: '#f1f5f9',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 24px'
+              }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
+              </div>
+              <h3 style={{
+                fontSize: '20px',
+                fontWeight: 600,
+                color: '#0f172a',
+                marginBottom: '12px',
+                letterSpacing: '-0.3px'
+              }}>
+                No Dashboards Created
               </h3>
-              <p style={{ color: '#64748b', marginBottom: '32px', fontSize: '15px', maxWidth: '400px', margin: '0 auto 32px' }}>
-                Start creating beautiful dashboards by selecting datasets and building visualizations
+              <p style={{
+                color: '#64748b',
+                fontSize: '15px',
+                lineHeight: '1.6',
+                maxWidth: '440px',
+                margin: '0 auto',
+                fontWeight: 400
+              }}>
+                Create your first dashboard by clicking the "New Dashboard" button above to start visualizing your data with custom charts and analytics.
               </p>
-              <button
-                onClick={() => navigate('/visualize')}
-                style={{
-                  padding: '14px 32px',
-                  backgroundColor: '#4f46e5',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '10px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Get Started
-          </button>
-        </div>
+            </div>
           ) : (
             <div style={{
               display: 'grid',

@@ -897,7 +897,12 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (typeof initialConfig.scatterMaxPointSize === 'number') setScatterMaxPointSize(initialConfig.scatterMaxPointSize);
 
       // Heatmap
-      if (initialConfig.heatmapAggregation) setHeatmapAggregation(initialConfig.heatmapAggregation);
+      if (initialConfig.heatmapAggregation) {
+        const v = initialConfig.heatmapAggregation;
+        if (v === 'sum' || v === 'avg' || v === 'count' || v === 'min' || v === 'max') {
+          setHeatmapAggregation(v);
+        }
+      }
       if (initialConfig.heatmapValueColumn) setHeatmapValueColumn(initialConfig.heatmapValueColumn);
       if (typeof initialConfig.heatmapShowValues === 'boolean') setHeatmapShowValues(initialConfig.heatmapShowValues);
       if (typeof initialConfig.heatmapShowGrid === 'boolean') setHeatmapShowGrid(initialConfig.heatmapShowGrid);
@@ -4250,7 +4255,12 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Aggregation</div>
                 <select
                   value={heatmapAggregation}
-                  onChange={(e) => setHeatmapAggregation(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'sum' || v === 'avg' || v === 'count' || v === 'min' || v === 'max') {
+                      setHeatmapAggregation(v);
+                    }
+                  }}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
