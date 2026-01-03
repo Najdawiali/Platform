@@ -1867,12 +1867,6 @@ export const CreateDashboardPage: React.FC = () => {
                     }
                     console.log('[UPDATE] All old charts deleted');
                     
-                    // Update dashboard description (keep existing name)
-                    await dashboardService.updateDashboard(editDashboardId, {
-                      description: `Updated with ${charts.length} chart(s)`
-                    });
-                    console.log('[UPDATE] Dashboard metadata updated');
-                    
                     // Add new charts
                     for (const chart of charts) {
                       console.log('[UPDATE] Adding new chart');

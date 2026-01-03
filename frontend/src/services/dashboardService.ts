@@ -40,7 +40,10 @@ export const dashboardService = {
   },
 
   // Update dashboard metadata
-  async updateDashboard(dashboardId: string, data: { name?: string; description?: string }): Promise<Dashboard> {
+  async updateDashboard(
+    dashboardId: string,
+    data: { name?: string; description?: string; is_main?: boolean; is_private?: boolean }
+  ): Promise<Dashboard> {
     const response = await api.put(`/api/dashboards/${dashboardId}`, data);
     return response.data;
   },

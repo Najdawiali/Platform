@@ -170,6 +170,8 @@ export interface Dashboard {
   user_id: string;
   name: string;
   description?: string;
+  is_main?: boolean;
+  is_private?: boolean;
   created_at: string;
   updated_at?: string;
   charts: DashboardChart[];
@@ -179,6 +181,8 @@ export interface DashboardListItem {
   id: string;
   name: string;
   description?: string;
+  is_main?: boolean;
+  is_private?: boolean;
   chart_count: number;
   first_chart_type?: string;
   created_at: string;
@@ -188,6 +192,8 @@ export interface DashboardListItem {
 export interface DashboardCreate {
   name: string;
   description?: string;
+  is_main?: boolean;
+  is_private?: boolean;
   charts: DashboardChartCreate[];
 }
 

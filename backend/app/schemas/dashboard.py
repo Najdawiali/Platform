@@ -50,6 +50,8 @@ class DashboardBase(BaseModel):
     """Base schema for dashboard"""
     name: str
     description: Optional[str] = None
+    is_main: bool = False
+    is_private: bool = True
 
 
 class DashboardCreate(DashboardBase):
@@ -61,6 +63,8 @@ class DashboardUpdate(BaseModel):
     """Schema for updating a dashboard"""
     name: Optional[str] = None
     description: Optional[str] = None
+    is_main: Optional[bool] = None
+    is_private: Optional[bool] = None
 
 
 class Dashboard(DashboardBase):
@@ -81,6 +85,8 @@ class DashboardListItem(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    is_main: bool = False
+    is_private: bool = True
     chart_count: int
     first_chart_type: Optional[str] = None
     created_at: datetime

@@ -7,6 +7,7 @@ import asyncio
 import logging
 from typing import Optional
 from .database import engine, Base
+from sqlalchemy import text
 from .database import SessionLocal
 from .config import settings
 
@@ -22,6 +23,25 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_schema() -> None:
+    """Best-effort lightweight migrations for local SQLite."""
+    try:
+        if engine.dialect.name != "sqlite":
+            return
+        with engine.begin() as conn:
+            cols = [row[1] for row in conn.execute(text("PRAGMA table_info(dashboards)"))]
+            if "is_main" not in cols:
+                conn.execute(text("ALTER TABLE dashboards ADD COLUMN is_main BOOLEAN DEFAULT 0"))
+            if "is_private" not in cols:
+                conn.execute(text("ALTER TABLE dashboards ADD COLUMN is_private BOOLEAN DEFAULT 1"))
+    except Exception:
+        # Do not block app startup if migration fails.
+        pass
+
+
+_ensure_schema()
 
 app = FastAPI(
     title="Data Platform API",

@@ -404,6 +404,24 @@ const DashboardViewPage: React.FC = () => {
     retry: false,
   });
 
+  // Chart menu state (for insight view)
+  const [showChartMenu, setShowChartMenu] = useState(false);
+  const chartMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (chartMenuRef.current && !chartMenuRef.current.contains(event.target as Node)) {
+        setShowChartMenu(false);
+      }
+    };
+    
+    if (showChartMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showChartMenu]);
+
   const renderChart = (chart: any, chartData: any) => {
     const cfg = chart.config || {};
     
@@ -2023,27 +2041,172 @@ const DashboardViewPage: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => navigate(`/insights/sql-editor?dashboardId=${sqlInsight.dashboard.id}&chartId=${sqlInsight.chart.id}`)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  color: '#475569',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
-              >
-                ✏️ Edit
-              </button>
+              {/* Menu Dropdown */}
+              <div style={{ position: 'relative' }} ref={chartMenuRef}>
+                <button
+                  onClick={() => setShowChartMenu(!showChartMenu)}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: 'white',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    color: '#475569',
+                    fontSize: '18px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                    lineHeight: 1,
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                >
+                  ⋯
+                </button>
+                
+                {showChartMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '100%',
+                    marginTop: '4px',
+                    backgroundColor: 'white',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
+                    zIndex: 50,
+                    minWidth: '180px',
+                    overflow: 'hidden'
+                  }}>
+                    <button
+                      onClick={() => {
+                        setShowChartMenu(false);
+                        navigate(`/insights/sql-editor?dashboardId=${sqlInsight.dashboard.id}&chartId=${sqlInsight.chart.id}`);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        color: '#334155',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'background-color 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <span>✏️</span>
+                      <span>Edit Chart</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setShowChartMenu(false);
+                        // Export as PNG logic here
+                        const chartElement = document.querySelector('[data-chart-container]');
+                        if (chartElement) {
+                          import('html2canvas').then((html2canvas) => {
+                            html2canvas.default(chartElement as HTMLElement).then((canvas) => {
+                              const link = document.createElement('a');
+                              link.download = `${sqlInsight.chart.title || 'chart'}.png`;
+                              link.href = canvas.toDataURL();
+                              link.click();
+                            });
+                          });
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        color: '#334155',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'background-color 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <span>🖼️</span>
+                      <span>Export as PNG</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setShowChartMenu(false);
+                        // Export the aggregated chart data (data used to build the chart, not raw SQL results)
+                        if (chartData?.data && chartData.data.length > 0) {
+                          try {
+                            // Get column headers from the first row
+                            const headers = Object.keys(chartData.data[0]);
+                            
+                            // Create CSV content
+                            const csvRows = [
+                              headers.join(','),
+                              ...chartData.data.map((row: any) => 
+                                headers.map(header => {
+                                  const val = row[header];
+                                  // Properly escape values containing commas, quotes, or newlines
+                                  if (val === null || val === undefined) return '';
+                                  const strVal = String(val);
+                                  if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+                                    return `"${strVal.replace(/"/g, '""')}"`;
+                                  }
+                                  return strVal;
+                                }).join(',')
+                              )
+                            ];
+                            
+                            const csvContent = csvRows.join('\n');
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            const link = document.createElement('a');
+                            link.download = `${sqlInsight.chart.title || 'chart'}_data.csv`;
+                            link.href = URL.createObjectURL(blob);
+                            link.click();
+                            URL.revokeObjectURL(link.href);
+                          } catch (error) {
+                            console.error('Failed to export chart data:', error);
+                            alert('Failed to export chart data. Please try again.');
+                          }
+                        } else {
+                          alert('No chart data available to export.');
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        color: '#334155',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'background-color 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <span>📊</span>
+                      <span>Export as CSV</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
               
               {/* Description */}
@@ -2083,7 +2246,7 @@ const DashboardViewPage: React.FC = () => {
                   Loading chart data...
                 </div>
               ) : (
-                <div style={{ padding: '20px', paddingBottom: '44px', height: '500px' }}>
+                <div data-chart-container style={{ padding: '20px', paddingBottom: '44px', height: '500px' }}>
                   {renderChart(sqlInsight.chart, chartData)}
                 </div>
               )}

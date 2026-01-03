@@ -47,6 +47,18 @@ class DashboardService:
     """Service for managing dashboards"""
 
     @staticmethod
+    def _unset_other_main_dashboards(user_id: str, db: Session, *, exclude_dashboard_id: Optional[str] = None) -> None:
+        """Ensure only one dashboard is marked main per user (dashboards only, not insights)."""
+        q = db.query(Dashboard).filter(
+            Dashboard.user_id == user_id,
+            Dashboard.is_insight == False,
+            Dashboard.is_main == True,
+        )
+        if exclude_dashboard_id:
+            q = q.filter(Dashboard.id != exclude_dashboard_id)
+        q.update({Dashboard.is_main: False}, synchronize_session=False)
+
+    @staticmethod
     def create_dashboard(
         user: User,
         dashboard_data: DashboardCreate,
@@ -59,11 +71,17 @@ class DashboardService:
             user_id=user.id,
             name=dashboard_data.name,
             description=dashboard_data.description,
+            is_main=getattr(dashboard_data, "is_main", False),
+            is_private=getattr(dashboard_data, "is_private", True),
             is_insight=False  # This is a regular dashboard, not an insight
         )
         
         db.add(dashboard)
         db.flush()  # Get dashboard.id before creating charts
+
+        # If this dashboard is being set as main, unset any existing main dashboard for this user.
+        if getattr(dashboard_data, "is_main", False):
+            DashboardService._unset_other_main_dashboards(user.id, db, exclude_dashboard_id=dashboard.id)
         
         # Create charts
         for chart_data in dashboard_data.charts:
@@ -169,6 +187,8 @@ class DashboardService:
             Dashboard.id,
             Dashboard.name,
             Dashboard.description,
+            Dashboard.is_main,
+            Dashboard.is_private,
             Dashboard.created_at,
             Dashboard.updated_at,
             func.count(DashboardChart.id).label('chart_count'),
@@ -182,6 +202,8 @@ class DashboardService:
             Dashboard.id,
             Dashboard.name,
             Dashboard.description,
+            Dashboard.is_main,
+            Dashboard.is_private,
             Dashboard.created_at,
             Dashboard.updated_at
         ).all()
@@ -191,6 +213,8 @@ class DashboardService:
                 id=d.id,
                 name=d.name,
                 description=d.description,
+                is_main=getattr(d, "is_main", False),
+                is_private=getattr(d, "is_private", True),
                 chart_count=d.chart_count,
                 first_chart_type=d.first_chart_type,
                 created_at=d.created_at,
@@ -207,6 +231,8 @@ class DashboardService:
             Dashboard.id,
             Dashboard.name,
             Dashboard.description,
+            Dashboard.is_main,
+            Dashboard.is_private,
             Dashboard.created_at,
             Dashboard.updated_at,
             func.count(DashboardChart.id).label('chart_count'),
@@ -220,6 +246,8 @@ class DashboardService:
             Dashboard.id,
             Dashboard.name,
             Dashboard.description,
+            Dashboard.is_main,
+            Dashboard.is_private,
             Dashboard.created_at,
             Dashboard.updated_at
         ).all()
@@ -229,6 +257,8 @@ class DashboardService:
                 id=d.id,
                 name=d.name,
                 description=d.description,
+                is_main=getattr(d, "is_main", False),
+                is_private=getattr(d, "is_private", True),
                 chart_count=d.chart_count,
                 first_chart_type=d.first_chart_type,
                 created_at=d.created_at,
@@ -277,6 +307,20 @@ class DashboardService:
         
         if dashboard_data.description is not None:
             dashboard.description = dashboard_data.description
+
+        # Only dashboards (not insights) can be marked as main.
+        if getattr(dashboard_data, "is_main", None) is not None:
+            if dashboard.is_insight:
+                dashboard.is_main = False
+            else:
+                if dashboard_data.is_main:
+                    DashboardService._unset_other_main_dashboards(user.id, db, exclude_dashboard_id=dashboard.id)
+                    dashboard.is_main = True
+                else:
+                    dashboard.is_main = False
+
+        if getattr(dashboard_data, "is_private", None) is not None:
+            dashboard.is_private = bool(dashboard_data.is_private)
         
         db.commit()
         db.refresh(dashboard)

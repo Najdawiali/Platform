@@ -28,6 +28,12 @@ class Dashboard(Base):
     
     # Distinguish Insights from Dashboards
     is_insight = Column(Boolean, default=False)  # True for insights, False for dashboards
+
+    # Mark a dashboard as the user's main dashboard
+    is_main = Column(Boolean, default=False)
+
+    # Visibility
+    is_private = Column(Boolean, default=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
