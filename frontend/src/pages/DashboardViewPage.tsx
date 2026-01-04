@@ -2328,6 +2328,28 @@ const DashboardViewPage: React.FC = () => {
                   <div>
                     {(() => {
                       const cfg = (sqlInsight.chart.config || {}) as Record<string, any>;
+                      const savedFilters: Array<any> = Array.isArray((cfg as any).filters) ? (cfg as any).filters : [];
+                      const filterSummary = (() => {
+                        if (!savedFilters.length) return '';
+                        const fmt = (f: any): string => {
+                          const col = typeof f?.column === 'string' ? f.column : '';
+                          const op = typeof f?.op === 'string' ? f.op : '';
+                          if (!col || !op) return '';
+                          const v = typeof f?.value === 'string' ? f.value : '';
+                          const vals = Array.isArray(f?.values) ? f.values.filter((x: any) => typeof x === 'string' && x.trim()).map((x: string) => x.trim()) : [];
+                          const from = typeof f?.from === 'string' ? f.from : '';
+                          const to = typeof f?.to === 'string' ? f.to : '';
+                          const n = typeof f?.n === 'number' ? f.n : null;
+
+                          if (op === 'in') return `${col} in [${vals.join(', ')}]`;
+                          if (op === 'between' || op === 'date_between') return `${col} ${op} ${from}..${to}`;
+                          if (op === 'last_n_days' || op === 'last_n_weeks' || op === 'last_n_months') return `${col} ${op} ${n ?? ''}`.trim();
+                          if (op === 'is_null' || op === 'is_not_null' || op === 'is_true' || op === 'is_false') return `${col} ${op}`;
+                          return v ? `${col} ${op} ${v}` : `${col} ${op}`;
+                        };
+                        return savedFilters.map(fmt).filter(Boolean).join(' • ');
+                      })();
+
                       const scatterCfg = (cfg.scatterConfig || {}) as Record<string, any>;
                       const isScatter = sqlInsight.chart.chart_type === 'scatter';
                       const isRadar = sqlInsight.chart.chart_type === 'radar';
@@ -2435,6 +2457,16 @@ const DashboardViewPage: React.FC = () => {
 
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                          {savedFilters.length > 0 ? (
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>
+                                Filters ({savedFilters.length})
+                              </div>
+                              <div style={{ fontSize: '14px', color: '#0f172a', wordBreak: 'break-word' }}>
+                                {filterSummary}
+                              </div>
+                            </div>
+                          ) : null}
                           {sqlInsight.chart.chart_type === 'gauge' || sqlInsight.chart.chart_type === 'kpi' ? (
                             <>
                               {/* Value */}

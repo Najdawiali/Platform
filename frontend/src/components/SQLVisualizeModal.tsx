@@ -236,6 +236,325 @@ const isTemporalColumn = (col: string, rows: Array<Record<string, any>>): boolea
   return ratio >= 0.8;
 };
 
+type ColumnKind = 'string' | 'number' | 'date' | 'boolean';
+
+type SqlFilterOp =
+  // String
+  | 'eq'
+  | 'neq'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'in'
+  | 'is_null'
+  | 'is_not_null'
+  // Numeric
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'between'
+  // Date
+  | 'on'
+  | 'before'
+  | 'after'
+  | 'date_between'
+  | 'today'
+  | 'yesterday'
+  | 'last_30_days'
+  | 'last_n_days'
+  | 'last_n_weeks'
+  | 'last_n_months'
+  | 'this_week'
+  | 'this_month'
+  | 'this_year'
+  | 'prev_week'
+  | 'prev_month'
+  | 'prev_year'
+  // Boolean
+  | 'is_true'
+  | 'is_false';
+
+type SqlResultFilter = {
+  id: string;
+  column: string;
+  op: SqlFilterOp;
+  // Free-text / single value
+  value?: string;
+  // Multi-select
+  values?: string[];
+  // Between range (number or date)
+  from?: string;
+  to?: string;
+  // Relative window length (N)
+  n?: number;
+};
+
+const makeId = (): string => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeBool = (v: unknown): boolean | null => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') {
+    if (v === 1) return true;
+    if (v === 0) return false;
+    return null;
+  }
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase();
+    if (t === 'true' || t === 't' || t === 'yes' || t === 'y' || t === '1') return true;
+    if (t === 'false' || t === 'f' || t === 'no' || t === 'n' || t === '0') return false;
+  }
+  return null;
+};
+
+const inferColumnKind = (col: string, rows: Array<Record<string, any>>): ColumnKind => {
+  const sample = rows.slice(0, 200);
+  const vals = sample.map((r) => r?.[col]).filter((v) => v !== null && v !== undefined);
+  if (vals.length === 0) return 'string';
+
+  let boolHits = 0;
+  let numHits = 0;
+  let dateHits = 0;
+  const take = Math.min(80, vals.length);
+  for (const v of vals.slice(0, take)) {
+    if (normalizeBool(v) !== null) boolHits += 1;
+    if (isNumeric(v)) numHits += 1;
+    if (parseDateLike(v)) dateHits += 1;
+  }
+  const denom = take || 1;
+
+  // Prefer boolean when it clearly matches.
+  if (boolHits / denom >= 0.9) return 'boolean';
+
+  // Prefer date when the column name is temporal-ish and some values parse,
+  // or when values strongly parse as dates.
+  const temporalName = isTemporalColumnName(col);
+  if ((temporalName && dateHits / denom >= 0.2) || dateHits / denom >= 0.8) return 'date';
+
+  if (numHits / denom >= 0.8) return 'number';
+  return 'string';
+};
+
+const valueFrequencies = (col: string, rows: Array<Record<string, any>>): Array<{ value: string; count: number }> => {
+  const freq = new Map<string, number>();
+  const sample = rows.slice(0, 1000);
+  for (const r of sample) {
+    const v = r?.[col];
+    if (v === null || v === undefined) continue;
+    const k = String(v);
+    freq.set(k, (freq.get(k) ?? 0) + 1);
+  }
+  return Array.from(freq.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count);
+};
+
+const startOfDayLocal = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+const addDaysLocal = (d: Date, days: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
+
+const startOfWeekLocal = (d: Date) => {
+  // Monday as start of week.
+  const day = d.getDay(); // 0..6, Sunday=0
+  const diff = day === 0 ? -6 : 1 - day;
+  return addDaysLocal(startOfDayLocal(d), diff);
+};
+
+const startOfMonthLocal = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+const startOfYearLocal = (d: Date) => new Date(d.getFullYear(), 0, 1);
+
+const toYMDLocal = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const da = pad2(d.getDate());
+  return `${y}-${m}-${da}`;
+};
+
+const parseDateInputLocal = (ymd: string | undefined): Date | null => {
+  const t = (ymd ?? '').trim();
+  if (!t) return null;
+  // `YYYY-MM-DD` input
+  const m = /^\d{4}-\d{2}-\d{2}$/.test(t);
+  if (!m) return null;
+  const d = new Date(`${t}T00:00:00`);
+  return Number.isFinite(d.getTime()) ? d : null;
+};
+
+const applySqlResultFilters = (
+  rows: Array<Record<string, any>>,
+  kinds: Record<string, ColumnKind>,
+  filters: SqlResultFilter[]
+): Array<Record<string, any>> => {
+  if (!filters || filters.length === 0) return rows;
+  const active = filters.filter((f) => f.column && f.op);
+  if (active.length === 0) return rows;
+
+  const now = new Date();
+  const todayStart = startOfDayLocal(now);
+
+  const passes = (row: Record<string, any>, f: SqlResultFilter): boolean => {
+    const v = row?.[f.column];
+    const kind = kinds[f.column] ?? 'string';
+
+    if (f.op === 'is_null') return v === null || v === undefined;
+    if (f.op === 'is_not_null') return v !== null && v !== undefined;
+
+    if (kind === 'boolean') {
+      const b = normalizeBool(v);
+      if (f.op === 'is_true') return b === true;
+      if (f.op === 'is_false') return b === false;
+      return true;
+    }
+
+    if (kind === 'number') {
+      const n = toNumber(v);
+      if (n === null) return false;
+      const arg = toNumber(f.value);
+
+      if (f.op === 'eq') return arg !== null ? n === arg : true;
+      if (f.op === 'neq') return arg !== null ? n !== arg : true;
+      if (f.op === 'gt') return arg !== null ? n > arg : true;
+      if (f.op === 'gte') return arg !== null ? n >= arg : true;
+      if (f.op === 'lt') return arg !== null ? n < arg : true;
+      if (f.op === 'lte') return arg !== null ? n <= arg : true;
+      if (f.op === 'between') {
+        const lo = toNumber(f.from);
+        const hi = toNumber(f.to);
+        if (lo !== null && hi !== null) return n >= lo && n <= hi;
+        if (lo !== null) return n >= lo;
+        if (hi !== null) return n <= hi;
+        return true;
+      }
+      if (f.op === 'in') {
+        const set = new Set((f.values ?? []).map((x) => toNumber(x)).filter((x): x is number => x !== null));
+        if (set.size === 0) return true;
+        return set.has(n);
+      }
+      return true;
+    }
+
+    if (kind === 'date') {
+      const d = parseDateLike(v);
+      if (!d) return false;
+
+      if (f.op === 'today') {
+        const start = todayStart;
+        const end = addDaysLocal(start, 1);
+        return d >= start && d < end;
+      }
+      if (f.op === 'yesterday') {
+        const end = todayStart;
+        const start = addDaysLocal(end, -1);
+        return d >= start && d < end;
+      }
+      if (f.op === 'last_30_days') {
+        const end = addDaysLocal(todayStart, 1);
+        const start = addDaysLocal(todayStart, -30);
+        return d >= start && d < end;
+      }
+      if (f.op === 'last_n_days') {
+        const n = Math.max(1, Math.min(3650, Number.isFinite(f.n as number) ? (f.n as number) : 7));
+        const end = addDaysLocal(todayStart, 1);
+        const start = addDaysLocal(todayStart, -n);
+        return d >= start && d < end;
+      }
+      if (f.op === 'last_n_weeks') {
+        const n = Math.max(1, Math.min(520, Number.isFinite(f.n as number) ? (f.n as number) : 4));
+        const end = addDaysLocal(todayStart, 1);
+        const start = addDaysLocal(todayStart, -7 * n);
+        return d >= start && d < end;
+      }
+      if (f.op === 'last_n_months') {
+        const n = Math.max(1, Math.min(240, Number.isFinite(f.n as number) ? (f.n as number) : 3));
+        const end = addDaysLocal(todayStart, 1);
+        const start = new Date(todayStart.getFullYear(), todayStart.getMonth() - n, todayStart.getDate());
+        return d >= start && d < end;
+      }
+      if (f.op === 'this_week') {
+        const start = startOfWeekLocal(now);
+        const end = addDaysLocal(start, 7);
+        return d >= start && d < end;
+      }
+      if (f.op === 'prev_week') {
+        const end = startOfWeekLocal(now);
+        const start = addDaysLocal(end, -7);
+        return d >= start && d < end;
+      }
+      if (f.op === 'this_month') {
+        const start = startOfMonthLocal(now);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        return d >= start && d < end;
+      }
+      if (f.op === 'prev_month') {
+        const end = startOfMonthLocal(now);
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        return d >= start && d < end;
+      }
+      if (f.op === 'this_year') {
+        const start = startOfYearLocal(now);
+        const end = new Date(now.getFullYear() + 1, 0, 1);
+        return d >= start && d < end;
+      }
+      if (f.op === 'prev_year') {
+        const end = startOfYearLocal(now);
+        const start = new Date(now.getFullYear() - 1, 0, 1);
+        return d >= start && d < end;
+      }
+
+      if (f.op === 'on') {
+        const want = parseDateInputLocal(f.value);
+        if (!want) return true;
+        return toYMDLocal(d) === toYMDLocal(want);
+      }
+      if (f.op === 'before') {
+        const cut = parseDateInputLocal(f.value);
+        if (!cut) return true;
+        return d < cut;
+      }
+      if (f.op === 'after') {
+        const cut = parseDateInputLocal(f.value);
+        if (!cut) return true;
+        // Treat "After" as strictly after the selected day.
+        return d >= addDaysLocal(cut, 1);
+      }
+      if (f.op === 'date_between') {
+        const from = parseDateInputLocal(f.from);
+        const to = parseDateInputLocal(f.to);
+        const start = from ?? null;
+        const endExclusive = to ? addDaysLocal(to, 1) : null;
+        if (start && endExclusive) return d >= start && d < endExclusive;
+        if (start) return d >= start;
+        if (endExclusive) return d < endExclusive;
+        return true;
+      }
+      return true;
+    }
+
+    // string
+    const s = v === null || v === undefined ? '' : String(v);
+    const t = (f.value ?? '').toString();
+    const base = s.toLowerCase();
+    const needle = t.toLowerCase();
+
+    if (f.op === 'eq') return t ? base === needle : true;
+    if (f.op === 'neq') return t ? base !== needle : true;
+    if (f.op === 'contains') return needle ? base.includes(needle) : true;
+    if (f.op === 'not_contains') return needle ? !base.includes(needle) : true;
+    if (f.op === 'starts_with') return needle ? base.startsWith(needle) : true;
+    if (f.op === 'ends_with') return needle ? base.endsWith(needle) : true;
+    if (f.op === 'in') {
+      const set = new Set((f.values ?? []).map((x) => String(x).toLowerCase()));
+      if (set.size === 0) return true;
+      return set.has(base);
+    }
+    return true;
+  };
+
+  return rows.filter((r) => active.every((f) => passes(r, f)));
+};
+
 type MultiSelectOptionGroup = { label: string; options: string[] };
 
 const MultiSelectChipField: React.FC<{
@@ -613,10 +932,82 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
   },
 };
 
-export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
+export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows: inputRows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
   const navigate = useNavigate();
-  const numericColumns = useMemo(() => inferNumericColumns(columns, rows), [columns, rows]);
+
+  const [filters, setFilters] = useState<SqlResultFilter[]>([]);
+
+  const columnKinds = useMemo(() => {
+    const m: Record<string, ColumnKind> = {};
+    for (const c of columns) {
+      m[c] = inferColumnKind(c, inputRows);
+    }
+    return m;
+  }, [columns, inputRows]);
+
+  const filteredRows = useMemo(() => applySqlResultFilters(inputRows, columnKinds, filters), [inputRows, columnKinds, filters]);
+
+  // From this point onward, treat `rows` as the filtered result so all existing
+  // visualization logic automatically respects filters.
+  const rows = filteredRows;
+
+  const columnValueProfiles = useMemo(() => {
+    const m: Record<string, { uniqueCount: number; topValues: string[]; topValueCounts: Record<string, number> }> = {};
+    for (const c of columns) {
+      const freqs = valueFrequencies(c, inputRows);
+      const top = freqs.slice(0, 200);
+      const topValues = top.map((x) => x.value);
+      const topValueCounts: Record<string, number> = {};
+      for (const x of top) topValueCounts[x.value] = x.count;
+      m[c] = { uniqueCount: freqs.length, topValues, topValueCounts };
+    }
+    return m;
+  }, [columns, inputRows]);
+
+  const isCategoricalColumn = useCallback(
+    (col: string): boolean => {
+      if (!col) return false;
+      if ((columnKinds[col] ?? 'string') !== 'string') return false;
+      const uniq = columnValueProfiles[col]?.uniqueCount ?? 0;
+      return uniq > 0 && uniq <= 30;
+    },
+    [columnKinds, columnValueProfiles]
+  );
+
+  const getDefaultFilterOp = useCallback(
+    (col: string): SqlFilterOp => {
+      const kind = columnKinds[col] ?? 'string';
+      if (kind === 'number') return 'between';
+      if (kind === 'date') return 'last_30_days';
+      if (kind === 'boolean') return 'is_true';
+      if (isCategoricalColumn(col)) return 'in';
+      return 'contains';
+    },
+    [columnKinds, isCategoricalColumn]
+  );
+
+  const addFilter = useCallback(() => {
+    const col = columns[0] ?? '';
+    if (!col) return;
+    const op = getDefaultFilterOp(col);
+    setFilters((prev) => [...prev, { id: makeId(), column: col, op, values: op === 'in' ? [] : undefined }]);
+  }, [columns, getDefaultFilterOp]);
+
+  const updateFilter = useCallback((id: string, patch: Partial<SqlResultFilter>) => {
+    setFilters((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  }, []);
+
+  const removeFilter = useCallback((id: string) => {
+    setFilters((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  const numericColumns = useMemo(() => inferNumericColumns(columns, filteredRows), [columns, filteredRows]);
   const nonNumericColumns = useMemo(() => inferCategoricalColumns(columns, numericColumns), [columns, numericColumns]);
+
+  // Ensure filters always reference valid columns.
+  useEffect(() => {
+    setFilters((prev) => prev.filter((f) => !f.column || columns.includes(f.column)));
+  }, [columns]);
 
   const [layoutReady, setLayoutReady] = useState(false);
   
@@ -922,6 +1313,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (typeof initialConfig.boxPlotShowOutliers === 'boolean') setBoxPlotShowOutliers(initialConfig.boxPlotShowOutliers);
       if (initialConfig.boxPlotBoxColor) setBoxPlotBoxColor(initialConfig.boxPlotBoxColor);
       if (typeof initialConfig.boxPlotShowGrid === 'boolean') setBoxPlotShowGrid(initialConfig.boxPlotShowGrid);
+
+      // Filters
+      if (Array.isArray((initialConfig as any).filters)) {
+        setFilters((initialConfig as any).filters as SqlResultFilter[]);
+      }
     }
   }, [initialConfig, isOpen]);
   
@@ -970,6 +1366,9 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
         scatterSizeBy,
         scatterPointOpacity,
         scatterMaxPointSize,
+
+        // SQL result filters (applied on the preview rows in the modal)
+        filters,
       };
 
       if (chartType === 'bar' || chartType === 'line' || chartType === 'area') {
@@ -1077,6 +1476,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       barOrientation,
       chartTitle,
       chartType,
+      filters,
       curveType,
       donutInnerRadius,
       funnelAggregation,
@@ -1495,11 +1895,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   const chartData = useMemo(() => {
     // Normalize into objects with selected keys for charts.
     // Keep row order; do not aggregate (matches "use query results" expectation).
-    return rows.map((r, idx) => ({
+    return filteredRows.map((r, idx) => ({
       __idx: idx + 1,
       ...(r || {}),
     }));
-  }, [rows]);
+  }, [filteredRows]);
 
   const isXYChart = chartType === 'bar' || chartType === 'line' || chartType === 'area';
 
@@ -2823,6 +3223,313 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
               onFocus={(e) => (e.currentTarget.style.borderColor = '#4f46e5')}
               onBlur={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
             />
+
+            <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>FILTERS</div>
+            {filters.length === 0 ? (
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '10px' }}>Add filters to narrow down the preview rows.</div>
+            ) : null}
+            {filters.map((f) => {
+              const kind = columnKinds[f.column] ?? 'string';
+              const categorical = isCategoricalColumn(f.column);
+              const profile = columnValueProfiles[f.column];
+              const topValues = profile?.topValues ?? [];
+
+              const opItem = (key: SqlFilterOp, label: string) => ({ key, label });
+
+              const ops: Array<{ key: SqlFilterOp; label: string }> = (() => {
+                if (kind === 'boolean') {
+                  return [
+                    opItem('is_true', 'Is true'),
+                    opItem('is_false', 'Is false'),
+                    opItem('is_null', 'Is null'),
+                    opItem('is_not_null', 'Is not null'),
+                  ];
+                }
+                if (kind === 'number') {
+                  return [
+                    opItem('between', 'Between'),
+                    opItem('eq', 'Equals'),
+                    opItem('neq', 'Not equals'),
+                    opItem('gt', 'Greater than'),
+                    opItem('gte', 'Greater than or equal'),
+                    opItem('lt', 'Less than'),
+                    opItem('lte', 'Less than or equal'),
+                    opItem('in', 'In list'),
+                    opItem('is_null', 'Is null'),
+                    opItem('is_not_null', 'Is not null'),
+                  ];
+                }
+                if (kind === 'date') {
+                  return [
+                    opItem('today', 'Today'),
+                    opItem('yesterday', 'Yesterday'),
+                    opItem('last_30_days', 'Last 30 days'),
+                    opItem('last_n_days', 'Last N days'),
+                    opItem('last_n_weeks', 'Last N weeks'),
+                    opItem('last_n_months', 'Last N months'),
+                    opItem('this_week', 'This week'),
+                    opItem('prev_week', 'Previous week'),
+                    opItem('this_month', 'This month'),
+                    opItem('prev_month', 'Previous month'),
+                    opItem('this_year', 'This year'),
+                    opItem('prev_year', 'Previous year'),
+                    opItem('on', 'On'),
+                    opItem('before', 'Before'),
+                    opItem('after', 'After'),
+                    opItem('date_between', 'Between'),
+                    opItem('is_null', 'Is null'),
+                    opItem('is_not_null', 'Is not null'),
+                  ];
+                }
+                // string
+                const base = [
+                  opItem('eq', 'Equals'),
+                  opItem('neq', 'Not equals'),
+                  opItem('contains', 'Contains'),
+                  opItem('not_contains', 'Does not contain'),
+                  opItem('starts_with', 'Starts with'),
+                  opItem('ends_with', 'Ends with'),
+                  opItem('in', 'In list'),
+                  opItem('is_null', 'Is null'),
+                  opItem('is_not_null', 'Is not null'),
+                ];
+                return base;
+              })();
+
+              const showValue = !['is_null', 'is_not_null', 'is_true', 'is_false', 'today', 'yesterday', 'last_30_days', 'this_week', 'prev_week', 'this_month', 'prev_month', 'this_year', 'prev_year'].includes(
+                f.op
+              );
+              const needsBetween = f.op === 'between' || f.op === 'date_between';
+              const needsN = f.op === 'last_n_days' || f.op === 'last_n_weeks' || f.op === 'last_n_months';
+              const needsList = f.op === 'in';
+
+              const lowCardinality = (profile?.uniqueCount ?? 0) > 0 && (profile?.uniqueCount ?? 0) <= 50;
+
+              const parseListText = (txt: string): string[] => {
+                return (txt || '')
+                  .split(/[,\n]/g)
+                  .map((x) => x.trim())
+                  .filter(Boolean);
+              };
+
+              return (
+                <div key={f.id} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '10px', marginBottom: '10px', backgroundColor: 'white' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <select
+                      value={f.column}
+                      onChange={(e) => {
+                        const nextCol = e.target.value;
+                        const nextOp = getDefaultFilterOp(nextCol);
+                        updateFilter(f.id, { column: nextCol, op: nextOp, value: '', values: nextOp === 'in' ? [] : undefined, from: '', to: '', n: undefined });
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        backgroundColor: 'white',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {columns.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeFilter(f.id)}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        backgroundColor: 'white',
+                        fontSize: '12px',
+                        fontWeight: 900,
+                        color: '#0f172a',
+                        cursor: 'pointer',
+                      }}
+                      title="Remove filter"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      value={f.op}
+                      onChange={(e) => {
+                        const nextOp = e.target.value as SqlFilterOp;
+                        updateFilter(f.id, { op: nextOp, value: '', values: nextOp === 'in' ? [] : undefined, from: '', to: '', n: undefined });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        backgroundColor: 'white',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {ops.map((o) => (
+                        <option key={o.key} value={o.key}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {needsN ? (
+                    <div style={{ marginTop: '8px' }}>
+                      <input
+                        type="number"
+                        value={String(f.n ?? '')}
+                        onChange={(e) => updateFilter(f.id, { n: e.target.value ? Number(e.target.value) : undefined })}
+                        placeholder="N"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '12px',
+                          color: '#0f172a',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  ) : null}
+
+                  {needsBetween ? (
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                      <input
+                        type={kind === 'date' ? 'date' : 'number'}
+                        value={f.from ?? ''}
+                        onChange={(e) => updateFilter(f.id, { from: e.target.value })}
+                        placeholder={kind === 'date' ? 'From' : 'Min'}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '12px',
+                          color: '#0f172a',
+                          outline: 'none',
+                        }}
+                      />
+                      <input
+                        type={kind === 'date' ? 'date' : 'number'}
+                        value={f.to ?? ''}
+                        onChange={(e) => updateFilter(f.id, { to: e.target.value })}
+                        placeholder={kind === 'date' ? 'To' : 'Max'}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '12px',
+                          color: '#0f172a',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  ) : null}
+
+                  {needsList ? (
+                    <div style={{ marginTop: '8px' }}>
+                      {lowCardinality ? (
+                        <MultiSelectChipField
+                          value={f.values ?? []}
+                          onChange={(next) => updateFilter(f.id, { values: next })}
+                          placeholder={categorical ? 'Select values' : 'Select values'}
+                          groups={[{ label: 'Values (sorted by frequency)', options: topValues }]}
+                        />
+                      ) : (
+                        <textarea
+                          value={f.value ?? (f.values ?? []).join(', ')}
+                          onChange={(e) => updateFilter(f.id, { value: e.target.value, values: parseListText(e.target.value) })}
+                          placeholder="Enter values separated by commas or new lines"
+                          rows={3}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '10px',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '12px',
+                            color: '#0f172a',
+                            outline: 'none',
+                            resize: 'vertical',
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : null}
+
+                  {showValue && !needsBetween && !needsList && !needsN ? (
+                    <div style={{ marginTop: '8px' }}>
+                      <input
+                        type={kind === 'number' ? 'number' : kind === 'date' ? 'date' : 'text'}
+                        value={f.value ?? ''}
+                        onChange={(e) => updateFilter(f.id, { value: e.target.value })}
+                        placeholder={kind === 'number' ? 'Value' : kind === 'date' ? 'Date' : 'Text'}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '12px',
+                          color: '#0f172a',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <button
+                type="button"
+                onClick={addFilter}
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: 'white',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  cursor: 'pointer',
+                }}
+              >
+                + Add filter
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilters([])}
+                disabled={filters.length === 0}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: filters.length === 0 ? '#f8fafc' : 'white',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  color: filters.length === 0 ? '#94a3b8' : '#0f172a',
+                  cursor: filters.length === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            </div>
 
             <div style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', marginBottom: '8px' }}>DATA MAPPING</div>
 

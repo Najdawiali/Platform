@@ -594,6 +594,18 @@ class DashboardService:
             # Get parquet path from dataset schema_info
             parquet_path = dataset.schema_info.get("parquet_path") if dataset.schema_info else None
 
+            schema_cols_raw = []
+            try:
+                if dataset.schema_info and isinstance(dataset.schema_info.get("schema"), dict):
+                    schema_cols_raw = dataset.schema_info.get("schema", {}).get("columns") or []
+            except Exception:
+                schema_cols_raw = []
+            available_cols: set[str] = set()
+            if isinstance(schema_cols_raw, list):
+                for c in schema_cols_raw:
+                    if isinstance(c, dict) and isinstance(c.get("name"), str) and c.get("name").strip():
+                        available_cols.add(c.get("name").strip())
+
             # Parquet paths are often stored as relative (e.g. "./uploads/..."), which is
             # sensitive to the process working directory. Resolve relative paths against
             # the backend folder to make runtime stable.
@@ -629,6 +641,209 @@ class DashboardService:
                     raise ValueError(f"Invalid column name: {name}")
                 return name
 
+            def _build_filters_predicate(raw_filters: Any) -> tuple[str, list[Any]]:
+                """Compile saved chart config filters into a DuckDB predicate and params.
+
+                Returns (predicate_sql_without_where, params).
+                """
+                if not raw_filters or not isinstance(raw_filters, list):
+                    return "", []
+
+                parts: list[str] = []
+                params: list[Any] = []
+
+                def _get_str(d: dict, k: str) -> str:
+                    v = d.get(k)
+                    return v.strip() if isinstance(v, str) else ""
+
+                def _get_num(d: dict, k: str) -> Optional[float]:
+                    v = d.get(k)
+                    if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                        return float(v)
+                    if isinstance(v, str):
+                        try:
+                            vv = float(v)
+                            if math.isfinite(vv):
+                                return vv
+                        except Exception:
+                            return None
+                    return None
+
+                for f in raw_filters:
+                    if not isinstance(f, dict):
+                        continue
+                    col = _get_str(f, "column")
+                    op = _get_str(f, "op").lower()
+                    if not col or not op:
+                        continue
+                    if available_cols and col not in available_cols:
+                        # Ignore unknown columns rather than failing the whole chart.
+                        continue
+                    col = _validate_ident(col)
+
+                    s_expr = f"lower(trim(coalesce(cast(\"{col}\" as varchar), '')))"
+                    n_expr = f"try_cast(\"{col}\" as double)"
+                    ts_expr = f"try_cast(\"{col}\" as timestamp)"
+                    d_expr = f"cast({ts_expr} as date)"
+
+                    # Null checks
+                    if op == "is_null":
+                        parts.append(f"\"{col}\" IS NULL")
+                        continue
+                    if op == "is_not_null":
+                        parts.append(f"\"{col}\" IS NOT NULL")
+                        continue
+
+                    # Boolean
+                    if op == "is_true":
+                        parts.append(f"try_cast(\"{col}\" as boolean) IS TRUE")
+                        continue
+                    if op == "is_false":
+                        parts.append(f"try_cast(\"{col}\" as boolean) IS FALSE")
+                        continue
+
+                    # String operators
+                    if op in {"eq", "neq", "contains", "not_contains", "starts_with", "ends_with"}:
+                        v = _get_str(f, "value")
+                        if not v:
+                            continue
+                        if op == "eq":
+                            parts.append(f"{s_expr} = lower(?)")
+                            params.append(v)
+                            continue
+                        if op == "neq":
+                            parts.append(f"{s_expr} <> lower(?)")
+                            params.append(v)
+                            continue
+                        if op == "contains":
+                            parts.append(f"{s_expr} LIKE lower(?)")
+                            params.append(f"%{v}%")
+                            continue
+                        if op == "not_contains":
+                            parts.append(f"NOT ({s_expr} LIKE lower(?))")
+                            params.append(f"%{v}%")
+                            continue
+                        if op == "starts_with":
+                            parts.append(f"{s_expr} LIKE lower(?)")
+                            params.append(f"{v}%")
+                            continue
+                        if op == "ends_with":
+                            parts.append(f"{s_expr} LIKE lower(?)")
+                            params.append(f"%{v}")
+                            continue
+
+                    if op == "in":
+                        vals = f.get("values")
+                        if not isinstance(vals, list):
+                            vals = []
+                        cleaned = [str(x).strip() for x in vals if isinstance(x, (str, int, float)) and str(x).strip()]
+                        if not cleaned:
+                            continue
+                        placeholders = ", ".join(["lower(?)"] * len(cleaned))
+                        parts.append(f"{s_expr} IN ({placeholders})")
+                        params.extend(cleaned)
+                        continue
+
+                    # Numeric operators
+                    if op in {"gt", "gte", "lt", "lte"}:
+                        v = _get_num(f, "value")
+                        if v is None:
+                            continue
+                        if op == "gt":
+                            parts.append(f"{n_expr} > ?")
+                        elif op == "gte":
+                            parts.append(f"{n_expr} >= ?")
+                        elif op == "lt":
+                            parts.append(f"{n_expr} < ?")
+                        else:
+                            parts.append(f"{n_expr} <= ?")
+                        params.append(v)
+                        continue
+
+                    if op == "between":
+                        v1 = _get_num(f, "from")
+                        v2 = _get_num(f, "to")
+                        if v1 is None or v2 is None:
+                            continue
+                        lo = min(v1, v2)
+                        hi = max(v1, v2)
+                        parts.append(f"{n_expr} BETWEEN ? AND ?")
+                        params.extend([lo, hi])
+                        continue
+
+                    # Date/time operators
+                    if op in {"on", "before", "after"}:
+                        v = _get_str(f, "value")
+                        if not v:
+                            continue
+                        if op == "on":
+                            parts.append(f"{d_expr} = cast(? as date)")
+                            params.append(v)
+                            continue
+                        if op == "before":
+                            parts.append(f"{ts_expr} < try_cast(? as timestamp)")
+                            params.append(v)
+                            continue
+                        if op == "after":
+                            parts.append(f"{ts_expr} > try_cast(? as timestamp)")
+                            params.append(v)
+                            continue
+
+                    if op == "date_between":
+                        v1 = _get_str(f, "from")
+                        v2 = _get_str(f, "to")
+                        if not v1 or not v2:
+                            continue
+                        parts.append(f"{d_expr} BETWEEN cast(? as date) AND cast(? as date)")
+                        params.extend([v1, v2])
+                        continue
+
+                    # Relative date presets (computed in DuckDB)
+                    if op == "today":
+                        parts.append(f"{d_expr} = current_date")
+                        continue
+                    if op == "yesterday":
+                        parts.append(f"{d_expr} = (current_date - interval '1 day')")
+                        continue
+                    if op == "last_30_days":
+                        parts.append(f"{d_expr} >= (current_date - interval '30 day') AND {d_expr} <= current_date")
+                        continue
+                    if op in {"last_n_days", "last_n_weeks", "last_n_months"}:
+                        n = f.get("n")
+                        try:
+                            n_int = int(n)
+                        except Exception:
+                            n_int = 0
+                        if n_int <= 0:
+                            continue
+                        unit = "day" if op == "last_n_days" else ("week" if op == "last_n_weeks" else "month")
+                        parts.append(f"{d_expr} >= (current_date - (? * interval '1 {unit}')) AND {d_expr} <= current_date")
+                        params.append(n_int)
+                        continue
+
+                    if op == "this_week":
+                        parts.append(f"{d_expr} >= cast(date_trunc('week', current_date) as date) AND {d_expr} < cast(date_trunc('week', current_date) + interval '1 week' as date)")
+                        continue
+                    if op == "prev_week":
+                        parts.append(f"{d_expr} >= cast(date_trunc('week', current_date) - interval '1 week' as date) AND {d_expr} < cast(date_trunc('week', current_date) as date)")
+                        continue
+                    if op == "this_month":
+                        parts.append(f"{d_expr} >= cast(date_trunc('month', current_date) as date) AND {d_expr} < cast(date_trunc('month', current_date) + interval '1 month' as date)")
+                        continue
+                    if op == "prev_month":
+                        parts.append(f"{d_expr} >= cast(date_trunc('month', current_date) - interval '1 month' as date) AND {d_expr} < cast(date_trunc('month', current_date) as date)")
+                        continue
+                    if op == "this_year":
+                        parts.append(f"{d_expr} >= cast(date_trunc('year', current_date) as date) AND {d_expr} < cast(date_trunc('year', current_date) + interval '1 year' as date)")
+                        continue
+                    if op == "prev_year":
+                        parts.append(f"{d_expr} >= cast(date_trunc('year', current_date) - interval '1 year' as date) AND {d_expr} < cast(date_trunc('year', current_date) as date)")
+                        continue
+
+                if not parts:
+                    return "", []
+                return " AND ".join([f"({p})" for p in parts]), params
+
             def _safe_alias(s: str) -> str:
                 out = re.sub(r"\s+", "_", (s or "").strip())
                 out = re.sub(r"[^A-Za-z0-9_]+", "_", out)
@@ -638,6 +853,8 @@ class DashboardService:
             offset_val = int(offset) if offset is not None else 0
             limit_clause = f"LIMIT {int(limit)}" if limit is not None else ""
             offset_clause = f"OFFSET {offset_val}" if offset_val else ""
+
+            filter_predicate, filter_params = _build_filters_predicate((chart.config or {}).get("filters") if isinstance(chart.config, dict) else None)
 
             total_result_rows = total_rows
             is_aggregated = False
@@ -710,7 +927,8 @@ class DashboardService:
                     metric_select = ", ".join([f"{m['expr']} AS \"{m['alias']}\"" for m in metrics])
                     inner_select = ", ".join([x for x in [group_select, metric_select] if x])
                     group_by_clause = f"GROUP BY {group_select}" if group_select else ""
-                    cte = f"WITH agg AS (SELECT {inner_select} FROM parquet_scan('{parquet_path}') {group_by_clause})"
+                    where_clause = f"WHERE {filter_predicate}" if filter_predicate else ""
+                    cte = f"WITH agg AS (SELECT {inner_select} FROM parquet_scan('{parquet_path}') {where_clause} {group_by_clause})"
 
                     # total groups/rows in aggregated result
                     total_result_rows = con.execute(f"{cte} SELECT COUNT(*) FROM agg").fetchone()[0]
@@ -731,7 +949,7 @@ class DashboardService:
                             sort_direction = "asc"
                         order_clause = f'ORDER BY "{sort_col}" {sort_direction.upper()}'
 
-                    where_clause = ""
+                    where_clause = f"WHERE {filter_predicate}" if filter_predicate else ""
 
                     query = f"""
                     {cte}
@@ -745,7 +963,7 @@ class DashboardService:
                     # Raw table path
                     requested = [_validate_ident(c) for c in _split_columns(columns)]
                     select_clause = ", ".join([f'"{c}"' for c in requested]) if requested else "*"
-                    where_clause = ""
+                    where_clause = f"WHERE {filter_predicate}" if filter_predicate else ""
 
                     order_clause = ""
                     sort_col = (sort_column or "").strip()
@@ -846,7 +1064,8 @@ class DashboardService:
                     inner_select = ", ".join([*group_cols, *metric_selects])
                     group_by_clause = f"GROUP BY {', '.join(group_by_cols)}"
 
-                    cte = f"WITH agg AS (SELECT {inner_select} FROM parquet_scan('{parquet_path}') {group_by_clause})"
+                    where_clause = f"WHERE {filter_predicate}" if filter_predicate else ""
+                    cte = f"WITH agg AS (SELECT {inner_select} FROM parquet_scan('{parquet_path}') {where_clause} {group_by_clause})"
                     total_result_rows = con.execute(f"{cte} SELECT COUNT(*) FROM agg").fetchone()[0]
 
                     # Columns returned
@@ -900,6 +1119,9 @@ class DashboardService:
                         else:
                             metric_expr = f'{agg_func.upper()}("{value_col}") AS "{value_col}"'
                         
+                        base_pred = f"\"{x_col}\" IS NOT NULL AND \"{y_col}\" IS NOT NULL"
+                        if filter_predicate:
+                            base_pred = f"{base_pred} AND ({filter_predicate})"
                         cte = f"""
                         WITH agg AS (
                             SELECT 
@@ -907,7 +1129,7 @@ class DashboardService:
                                 "{y_col}",
                                 {metric_expr}
                             FROM parquet_scan('{parquet_path}')
-                            WHERE "{x_col}" IS NOT NULL AND "{y_col}" IS NOT NULL
+                            WHERE {base_pred}
                             GROUP BY "{x_col}", "{y_col}"
                         )
                         """
@@ -945,10 +1167,13 @@ class DashboardService:
                         value_col = _validate_ident(str(value_col))
                         
                         # Just select the value column (non-null numeric values)
+                        base_pred = f"\"{value_col}\" IS NOT NULL"
+                        if filter_predicate:
+                            base_pred = f"{base_pred} AND ({filter_predicate})"
                         query = f"""
                         SELECT "{value_col}"
                         FROM parquet_scan('{parquet_path}')
-                        WHERE "{value_col}" IS NOT NULL
+                        WHERE {base_pred}
                         {limit_clause}
                         {offset_clause}
                         """
@@ -978,18 +1203,24 @@ class DashboardService:
                         # Select value column and optional category column
                         if category_col:
                             category_col = _validate_ident(str(category_col))
+                            base_pred = f"\"{value_col}\" IS NOT NULL"
+                            if filter_predicate:
+                                base_pred = f"{base_pred} AND ({filter_predicate})"
                             query = f"""
                             SELECT "{value_col}", "{category_col}"
                             FROM parquet_scan('{parquet_path}')
-                            WHERE "{value_col}" IS NOT NULL
+                            WHERE {base_pred}
                             {limit_clause}
                             {offset_clause}
                             """
                         else:
+                            base_pred = f"\"{value_col}\" IS NOT NULL"
+                            if filter_predicate:
+                                base_pred = f"{base_pred} AND ({filter_predicate})"
                             query = f"""
                             SELECT "{value_col}"
                             FROM parquet_scan('{parquet_path}')
-                            WHERE "{value_col}" IS NOT NULL
+                            WHERE {base_pred}
                             {limit_clause}
                             {offset_clause}
                             """
@@ -1019,6 +1250,8 @@ class DashboardService:
                             x_cols = [_validate_ident(str(chart.x_column))]
 
                     filters = [f'\"{c}\" IS NOT NULL' for c in x_cols]
+                    if filter_predicate:
+                        filters.append(f"({filter_predicate})")
                     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
                     # For line/area, ordering by X helps a lot; for others leave stable ordering.
                     if chart.chart_type in ['line', 'area'] and chart.x_column:
@@ -1035,7 +1268,10 @@ class DashboardService:
                     {offset_clause}
                     """
 
-            result_df = con.execute(query).df()
+            if filter_params:
+                result_df = con.execute(query, filter_params).df()
+            else:
+                result_df = con.execute(query).df()
             # Make results JSON-safe:
             # - Starlette JSONResponse uses allow_nan=False and will 500 on NaN/Infinity.
             # - pandas/numpy scalars should be converted to Python primitives.
