@@ -1519,11 +1519,15 @@ export const CreateDashboardPage: React.FC = () => {
                       
                       return {
                         dataset_id: chart.dataset_id,
+                        source_dashboard_id: insight.content.dashboardId,
+                        source_chart_id: chart.id,
                         chart_type: chart.chart_type,
                         x_column: chart.x_column || null,
                         y_column: chart.y_column || null,
                         title: chart.title || insight.content.title,
-                        config: chart.config || {},
+                        // Link-only: chart definition comes from the Insight; dashboard tiles should not copy insight config.
+                        // Only dashboard-tile-only overrides should live here.
+                        config: {},
                         position_x: posX,
                         position_y: posY,
                         width: gridWidth,

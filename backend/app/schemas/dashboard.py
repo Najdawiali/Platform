@@ -12,6 +12,8 @@ class DashboardChartBase(BaseModel):
     y_column: Optional[str] = None
     title: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
+    source_dashboard_id: Optional[str] = None
+    source_chart_id: Optional[str] = None
     position_x: int = 0
     position_y: int = 0
     width: int = 6
@@ -30,6 +32,8 @@ class DashboardChartUpdate(BaseModel):
     y_column: Optional[str] = None
     title: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
+    source_dashboard_id: Optional[str] = None
+    source_chart_id: Optional[str] = None
     position_x: Optional[int] = None
     position_y: Optional[int] = None
     width: Optional[int] = None

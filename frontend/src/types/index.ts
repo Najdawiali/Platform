@@ -153,6 +153,8 @@ export interface DashboardChart {
   id: string;
   dashboard_id: string;
   dataset_id: string;
+  source_dashboard_id?: string;
+  source_chart_id?: string;
   chart_type: ChartType | string;
   x_column?: string;
   y_column?: string;
@@ -201,6 +203,8 @@ export interface DashboardCreate {
 
 export interface DashboardChartCreate {
   dataset_id: string;
+  source_dashboard_id?: string;
+  source_chart_id?: string;
   chart_type: ChartType | string;
   x_column?: string;
   y_column?: string;

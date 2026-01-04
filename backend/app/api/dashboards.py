@@ -44,7 +44,7 @@ def create_dashboard(
     """Create a new dashboard"""
     try:
         created_dashboard = DashboardService.create_dashboard(current_user, dashboard, db)
-        return created_dashboard
+        return DashboardService.build_dashboard_response(created_dashboard, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -60,7 +60,7 @@ def create_sql_insight(
     """Create a 1-chart dashboard (Insight) from a SQL query by materializing results to a dataset."""
     try:
         created = DashboardService.create_sql_insight(current_user, insight, db)
-        return created
+        return DashboardService.build_dashboard_response(created, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -100,7 +100,7 @@ def get_dashboard(
             detail="Dashboard not found"
         )
     
-    return dashboard
+    return DashboardService.build_dashboard_response(dashboard, db)
 
 
 @router.put("/{dashboard_id}", response_model=Dashboard)
@@ -119,7 +119,7 @@ def update_dashboard(
             detail="Dashboard not found"
         )
     
-    return dashboard
+    return DashboardService.build_dashboard_response(dashboard, db)
 
 
 @router.put("/{dashboard_id}/from-sql", response_model=Dashboard)
@@ -137,7 +137,7 @@ def update_sql_insight(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dashboard not found"
             )
-        return updated
+        return DashboardService.build_dashboard_response(updated, db)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -326,6 +326,32 @@ def refresh_dashboard(
     try:
         result = DashboardService.refresh_dashboard_data(dashboard_id, current_user, db)
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upgrade-linked-tiles")
+def upgrade_linked_tiles(
+    dashboard_id: Optional[str] = None,
+    dry_run: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upgrade existing snapshot dashboard tiles to linked tiles (best-effort).
+
+    - When `dashboard_id` is provided, upgrades a single dashboard.
+    - Otherwise upgrades all dashboards for the current user.
+    - When `dry_run=true`, returns what would be changed without persisting.
+    """
+    try:
+        return DashboardService.upgrade_user_dashboards_to_linked_tiles(
+            current_user,
+            db,
+            dashboard_id=dashboard_id,
+            dry_run=dry_run,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

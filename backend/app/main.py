@@ -39,6 +39,12 @@ def _ensure_schema() -> None:
             if "config" not in cols:
                 # Stored as TEXT under SQLite; SQLAlchemy JSON will handle serialization.
                 conn.execute(text("ALTER TABLE dashboards ADD COLUMN config TEXT"))
+
+            chart_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(dashboard_charts)"))]
+            if "source_dashboard_id" not in chart_cols:
+                conn.execute(text("ALTER TABLE dashboard_charts ADD COLUMN source_dashboard_id TEXT"))
+            if "source_chart_id" not in chart_cols:
+                conn.execute(text("ALTER TABLE dashboard_charts ADD COLUMN source_chart_id TEXT"))
     except Exception:
         # Do not block app startup if migration fails.
         pass

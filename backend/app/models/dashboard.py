@@ -53,6 +53,11 @@ class DashboardChart(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     dashboard_id = Column(String, ForeignKey("dashboards.id"), nullable=False)
     dataset_id = Column(String, ForeignKey("datasets.id"), nullable=False)
+
+    # Optional linkage to an upstream Insight (which is represented as a Dashboard with is_insight=True)
+    # When set, this chart should be treated as a live reference to the source chart config/data.
+    source_dashboard_id = Column(String, nullable=True)
+    source_chart_id = Column(String, nullable=True)
     
     # Chart configuration
     chart_type = Column(String, nullable=False)  # 'bar', 'line', 'pie', 'scatter', etc.

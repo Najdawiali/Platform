@@ -20,13 +20,15 @@ Date: 2025-12-26
 """
 
 from typing import List, Optional, Dict, Any, Union
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 import os
 import math
+import json
+from types import SimpleNamespace
 import duckdb
 import pandas as pd
 import numpy as np
@@ -39,6 +41,8 @@ from ..schemas.dashboard import (
     DashboardCreate, DashboardUpdate, DashboardListItem,
     DashboardChartCreate, DashboardChartUpdate
 )
+from ..schemas.dashboard import Dashboard as DashboardSchema
+from ..schemas.dashboard import DashboardChart as DashboardChartSchema
 from ..services.query_service import QueryService
 from ..services.dataset_service import DatasetService
 
@@ -57,6 +61,288 @@ class DashboardService:
         if exclude_dashboard_id:
             q = q.filter(Dashboard.id != exclude_dashboard_id)
         q.update({Dashboard.is_main: False}, synchronize_session=False)
+
+    @staticmethod
+    def _validate_source_link(
+        user: User,
+        db: Session,
+        *,
+        source_dashboard_id: Optional[str],
+        source_chart_id: Optional[str],
+    ) -> Optional[DashboardChart]:
+        """Validate a (source_dashboard_id, source_chart_id) reference and return the source chart.
+
+        Source dashboards are Insights (dashboards with is_insight=True) owned by the same user.
+        """
+        if not source_dashboard_id and not source_chart_id:
+            return None
+        if not source_dashboard_id or not source_chart_id:
+            raise ValueError("Both source_dashboard_id and source_chart_id must be provided")
+
+        src_dash = db.query(Dashboard).filter(
+            Dashboard.id == source_dashboard_id,
+            Dashboard.user_id == user.id,
+            Dashboard.is_insight == True,
+        ).first()
+        if not src_dash:
+            raise ValueError("Source insight not found")
+
+        src_chart = db.query(DashboardChart).filter(
+            DashboardChart.id == source_chart_id,
+            DashboardChart.dashboard_id == source_dashboard_id,
+        ).first()
+        if not src_chart:
+            raise ValueError("Source insight chart not found")
+
+        return src_chart
+
+    @staticmethod
+    def _tile_only_config(cfg: Any) -> Dict[str, Any]:
+        """Extract dashboard-tile-only config keys from a chart config blob."""
+        if not isinstance(cfg, dict):
+            return {}
+        out: Dict[str, Any] = {}
+        v = cfg.get("globalTimeColumn")
+        if isinstance(v, str) and v.strip():
+            out["globalTimeColumn"] = v.strip()
+        return out
+
+    @staticmethod
+    def build_dashboard_response(dashboard: Dashboard, db: Session) -> DashboardSchema:
+        """Build a Dashboard API response, resolving linked charts to their source Insight charts."""
+
+        charts_out: list[DashboardChartSchema] = []
+        for c in list(getattr(dashboard, "charts", []) or []):
+            tile_cfg = DashboardService._tile_only_config(c.config)
+            src_chart = None
+            src_dash = None
+            if getattr(c, "source_dashboard_id", None) and getattr(c, "source_chart_id", None):
+                src_dash = db.query(Dashboard).filter(
+                    Dashboard.id == c.source_dashboard_id,
+                    Dashboard.user_id == dashboard.user_id,
+                    Dashboard.is_insight == True,
+                ).first()
+                if src_dash:
+                    src_chart = db.query(DashboardChart).filter(
+                        DashboardChart.id == c.source_chart_id,
+                        DashboardChart.dashboard_id == c.source_dashboard_id,
+                    ).first()
+
+            if src_dash and src_chart:
+                merged_cfg = {
+                    **(src_chart.config or {}),
+                    **tile_cfg,
+                }
+                title = src_chart.title or src_dash.name
+                charts_out.append(
+                    DashboardChartSchema(
+                        id=str(c.id),
+                        dashboard_id=str(c.dashboard_id),
+                        dataset_id=str(src_chart.dataset_id),
+                        chart_type=str(src_chart.chart_type),
+                        x_column=src_chart.x_column,
+                        y_column=src_chart.y_column,
+                        title=title,
+                        config=merged_cfg,
+                        source_dashboard_id=getattr(c, "source_dashboard_id", None),
+                        source_chart_id=getattr(c, "source_chart_id", None),
+                        position_x=c.position_x,
+                        position_y=c.position_y,
+                        width=c.width,
+                        height=c.height,
+                        created_at=c.created_at,
+                    )
+                )
+            else:
+                charts_out.append(
+                    DashboardChartSchema(
+                        id=str(c.id),
+                        dashboard_id=str(c.dashboard_id),
+                        dataset_id=str(c.dataset_id),
+                        chart_type=str(c.chart_type),
+                        x_column=c.x_column,
+                        y_column=c.y_column,
+                        title=c.title,
+                        config=c.config or {},
+                        source_dashboard_id=getattr(c, "source_dashboard_id", None),
+                        source_chart_id=getattr(c, "source_chart_id", None),
+                        position_x=c.position_x,
+                        position_y=c.position_y,
+                        width=c.width,
+                        height=c.height,
+                        created_at=c.created_at,
+                    )
+                )
+
+        return DashboardSchema(
+            id=str(dashboard.id),
+            user_id=str(dashboard.user_id),
+            name=dashboard.name,
+            description=dashboard.description,
+            is_insight=getattr(dashboard, "is_insight", False),
+            is_main=getattr(dashboard, "is_main", False),
+            is_private=getattr(dashboard, "is_private", True),
+            config=getattr(dashboard, "config", None),
+            created_at=dashboard.created_at,
+            updated_at=dashboard.updated_at,
+            charts=charts_out,
+        )
+
+    @staticmethod
+    def upgrade_user_dashboards_to_linked_tiles(
+        user: User,
+        db: Session,
+        *,
+        dashboard_id: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Best-effort: convert existing snapshot tiles into linked tiles.
+
+        Heuristic matching:
+        - Prefer exact match on sql_query (if present) + dataset_id
+        - Otherwise match on dataset_id
+        - Uses additional fields (chart_type/x/y) as tie-breakers
+
+        After linking:
+        - Persists only tile-only config keys (e.g., globalTimeColumn) on the dashboard chart
+        - Leaves layout fields intact
+        """
+
+        q = db.query(Dashboard).options(joinedload(Dashboard.charts)).filter(
+            Dashboard.user_id == user.id,
+            Dashboard.is_insight == False,
+        )
+        if dashboard_id:
+            q = q.filter(Dashboard.id == dashboard_id)
+        dashboards = q.all()
+
+        insights = db.query(Dashboard).options(joinedload(Dashboard.charts)).filter(
+            Dashboard.user_id == user.id,
+            Dashboard.is_insight == True,
+        ).all()
+
+        def _norm_query(v: Any) -> str:
+            return (v or "").strip() if isinstance(v, str) else ""
+
+        def _norm_sources(v: Any) -> str:
+            if v is None:
+                return ""
+            try:
+                return json.dumps(v, sort_keys=True)
+            except Exception:
+                return str(v)
+
+        def _best_source_for_tile(tile: DashboardChart) -> Optional[DashboardChart]:
+            tile_cfg = tile.config if isinstance(tile.config, dict) else {}
+            tile_query = _norm_query(tile_cfg.get("sql_query"))
+            tile_sources = _norm_sources(tile_cfg.get("sql_sources"))
+
+            best: Optional[DashboardChart] = None
+            best_score = 0
+            best_key = None
+
+            for ins in insights:
+                for sc in (ins.charts or []):
+                    score = 0
+                    # Primary signal
+                    if str(sc.dataset_id) == str(tile.dataset_id):
+                        score += 5
+
+                    sc_cfg = sc.config if isinstance(sc.config, dict) else {}
+                    sc_query = _norm_query(sc_cfg.get("sql_query"))
+                    sc_sources = _norm_sources(sc_cfg.get("sql_sources"))
+
+                    if tile_query and sc_query and tile_query == sc_query:
+                        score += 10
+                    elif tile_query or sc_query:
+                        # If one has a query and the other doesn't, or they differ, don't link.
+                        continue
+
+                    if tile_sources and sc_sources and tile_sources == sc_sources:
+                        score += 3
+
+                    # Tie-breakers
+                    if (tile.chart_type or "") == (sc.chart_type or ""):
+                        score += 2
+                    if (tile.x_column or "") == (sc.x_column or ""):
+                        score += 1
+                    if (tile.y_column or "") == (sc.y_column or ""):
+                        score += 1
+
+                    if score <= 0:
+                        continue
+
+                    # Require dataset_id match at minimum
+                    if str(sc.dataset_id) != str(tile.dataset_id):
+                        continue
+
+                    key = (str(ins.id), str(sc.id))
+                    if score > best_score:
+                        best, best_score, best_key = sc, score, key
+                    elif score == best_score and best_key and key != best_key:
+                        # Ambiguous tie; refuse to link.
+                        best = None
+
+            # Threshold: must have dataset match; if SQL query exists, we already required exact.
+            if best and best_score >= 5:
+                return best
+            return None
+
+        updated = 0
+        skipped_already_linked = 0
+        skipped_no_match = 0
+        details: list[Dict[str, Any]] = []
+
+        for d in dashboards:
+            for tile in (d.charts or []):
+                if getattr(tile, "source_dashboard_id", None) and getattr(tile, "source_chart_id", None):
+                    skipped_already_linked += 1
+                    continue
+
+                src = _best_source_for_tile(tile)
+                if not src:
+                    skipped_no_match += 1
+                    continue
+
+                # Find the owning insight dashboard id for this source chart
+                src_dash_id = None
+                for ins in insights:
+                    if any(str(c.id) == str(src.id) for c in (ins.charts or [])):
+                        src_dash_id = str(ins.id)
+                        break
+                if not src_dash_id:
+                    skipped_no_match += 1
+                    continue
+
+                tile_only_cfg = DashboardService._tile_only_config(tile.config)
+                details.append(
+                    {
+                        "dashboard_id": str(d.id),
+                        "tile_chart_id": str(tile.id),
+                        "source_dashboard_id": src_dash_id,
+                        "source_chart_id": str(src.id),
+                    }
+                )
+
+                if not dry_run:
+                    tile.source_dashboard_id = src_dash_id
+                    tile.source_chart_id = str(src.id)
+                    tile.config = tile_only_cfg
+                    # Keep dataset_id in sync with source (required non-null)
+                    tile.dataset_id = src.dataset_id
+                updated += 1
+
+        if not dry_run:
+            db.commit()
+
+        return {
+            "status": "dry_run" if dry_run else "upgraded",
+            "dashboards_scanned": len(dashboards),
+            "tiles_upgraded": updated,
+            "tiles_skipped_already_linked": skipped_already_linked,
+            "tiles_skipped_no_match": skipped_no_match,
+            "details": details,
+        }
 
     @staticmethod
     def create_dashboard(
@@ -85,23 +371,28 @@ class DashboardService:
         
         # Create charts
         for chart_data in dashboard_data.charts:
-            # Verify dataset exists and belongs to user
-            dataset = db.query(Dataset).filter(
-                Dataset.id == chart_data.dataset_id,
-                Dataset.user_id == user.id
-            ).first()
-            
-            if not dataset:
-                raise ValueError(f"Dataset {chart_data.dataset_id} not found")
+            # Link-only dashboards: tiles must reference an upstream Insight chart.
+            # We still accept dataset_id/chart_type/config in the payload for compatibility,
+            # but we ignore them and derive from the source chart.
+            src_chart = DashboardService._validate_source_link(
+                user,
+                db,
+                source_dashboard_id=getattr(chart_data, "source_dashboard_id", None),
+                source_chart_id=getattr(chart_data, "source_chart_id", None),
+            )
+            if src_chart is None:
+                raise ValueError("Dashboard tiles must link to an Insight chart")
             
             chart = DashboardChart(
                 dashboard_id=dashboard.id,
-                dataset_id=chart_data.dataset_id,
-                chart_type=chart_data.chart_type,
-                x_column=chart_data.x_column,
-                y_column=chart_data.y_column,
-                title=chart_data.title,
-                config=chart_data.config,
+                dataset_id=src_chart.dataset_id,
+                source_dashboard_id=getattr(chart_data, "source_dashboard_id", None),
+                source_chart_id=getattr(chart_data, "source_chart_id", None),
+                chart_type=src_chart.chart_type,
+                x_column=src_chart.x_column,
+                y_column=src_chart.y_column,
+                title=src_chart.title,
+                config=DashboardService._tile_only_config(chart_data.config),
                 position_x=chart_data.position_x,
                 position_y=chart_data.position_y,
                 width=chart_data.width,
@@ -449,24 +740,27 @@ class DashboardService:
         
         if not dashboard:
             return None
-        
-        # Verify dataset exists and belongs to user
-        dataset = db.query(Dataset).filter(
-            Dataset.id == chart_data.dataset_id,
-            Dataset.user_id == user.id
-        ).first()
-        
-        if not dataset:
-            raise ValueError(f"Dataset {chart_data.dataset_id} not found")
+
+        # Link-only dashboards: tiles must reference an upstream Insight chart.
+        src_chart = DashboardService._validate_source_link(
+            user,
+            db,
+            source_dashboard_id=getattr(chart_data, "source_dashboard_id", None),
+            source_chart_id=getattr(chart_data, "source_chart_id", None),
+        )
+        if src_chart is None:
+            raise ValueError("Dashboard tiles must link to an Insight chart")
         
         chart = DashboardChart(
             dashboard_id=dashboard_id,
-            dataset_id=chart_data.dataset_id,
-            chart_type=chart_data.chart_type,
-            x_column=chart_data.x_column,
-            y_column=chart_data.y_column,
-            title=chart_data.title,
-            config=chart_data.config,
+            dataset_id=src_chart.dataset_id,
+            source_dashboard_id=getattr(chart_data, "source_dashboard_id", None),
+            source_chart_id=getattr(chart_data, "source_chart_id", None),
+            chart_type=src_chart.chart_type,
+            x_column=src_chart.x_column,
+            y_column=src_chart.y_column,
+            title=src_chart.title,
+            config=DashboardService._tile_only_config(chart_data.config),
             position_x=chart_data.position_x,
             position_y=chart_data.position_y,
             width=chart_data.width,
@@ -503,18 +797,47 @@ class DashboardService:
         
         if not chart:
             return None
-        
-        # Update fields
-        if chart_data.chart_type is not None:
-            chart.chart_type = chart_data.chart_type
-        if chart_data.x_column is not None:
-            chart.x_column = chart_data.x_column
-        if chart_data.y_column is not None:
-            chart.y_column = chart_data.y_column
-        if chart_data.title is not None:
-            chart.title = chart_data.title
-        if chart_data.config is not None:
-            chart.config = chart_data.config
+
+        # Link-only behavior:
+        # - Linked tiles must remain in sync with the upstream Insight chart definition.
+        # - Dashboard updates can only adjust layout and tile-only overrides (e.g., globalTimeColumn).
+        # - Optionally, this endpoint can set/replace the link via source_*.
+        if getattr(chart, "source_dashboard_id", None) or getattr(chart, "source_chart_id", None) or \
+           getattr(chart_data, "source_dashboard_id", None) is not None or getattr(chart_data, "source_chart_id", None) is not None:
+            src_chart = DashboardService._validate_source_link(
+                user,
+                db,
+                source_dashboard_id=(chart_data.source_dashboard_id if chart_data.source_dashboard_id is not None else getattr(chart, "source_dashboard_id", None)),
+                source_chart_id=(chart_data.source_chart_id if chart_data.source_chart_id is not None else getattr(chart, "source_chart_id", None)),
+            )
+            if src_chart is None:
+                raise ValueError("Dashboard tiles must link to an Insight chart")
+
+            chart.source_dashboard_id = (chart_data.source_dashboard_id if chart_data.source_dashboard_id is not None else chart.source_dashboard_id)
+            chart.source_chart_id = (chart_data.source_chart_id if chart_data.source_chart_id is not None else chart.source_chart_id)
+
+            # Persist a copy for non-authoritative fallback, but runtime always resolves from source.
+            chart.dataset_id = src_chart.dataset_id
+            chart.chart_type = src_chart.chart_type
+            chart.x_column = src_chart.x_column
+            chart.y_column = src_chart.y_column
+            chart.title = src_chart.title
+
+            if chart_data.config is not None:
+                # Only keep tile-only keys
+                chart.config = DashboardService._tile_only_config(chart_data.config)
+        else:
+            # Legacy snapshot tile updates (should be phased out)
+            if chart_data.chart_type is not None:
+                chart.chart_type = chart_data.chart_type
+            if chart_data.x_column is not None:
+                chart.x_column = chart_data.x_column
+            if chart_data.y_column is not None:
+                chart.y_column = chart_data.y_column
+            if chart_data.title is not None:
+                chart.title = chart_data.title
+            if chart_data.config is not None:
+                chart.config = chart_data.config
         if chart_data.position_x is not None:
             chart.position_x = chart_data.position_x
         if chart_data.position_y is not None:
@@ -592,6 +915,41 @@ class DashboardService:
                 - metadata: Additional info (pagination)
         """
         try:
+            # Resolve linked chart to its upstream Insight chart.
+            try:
+                tile_cfg = DashboardService._tile_only_config(chart.config)
+                effective_chart = chart
+                if getattr(chart, "source_dashboard_id", None) and getattr(chart, "source_chart_id", None):
+                    src_dash = db.query(Dashboard).filter(
+                        Dashboard.id == chart.source_dashboard_id,
+                        Dashboard.is_insight == True,
+                    ).first()
+                    src_chart = None
+                    if src_dash:
+                        src_chart = db.query(DashboardChart).filter(
+                            DashboardChart.id == chart.source_chart_id,
+                            DashboardChart.dashboard_id == chart.source_dashboard_id,
+                        ).first()
+                    if src_dash and src_chart:
+                        merged_cfg = {
+                            **(src_chart.config or {}),
+                            **tile_cfg,
+                        }
+                        effective_chart = SimpleNamespace(
+                            id=chart.id,
+                            dashboard_id=chart.dashboard_id,
+                            dataset_id=src_chart.dataset_id,
+                            chart_type=src_chart.chart_type,
+                            x_column=src_chart.x_column,
+                            y_column=src_chart.y_column,
+                            title=(src_chart.title or src_dash.name),
+                            config=merged_cfg,
+                        )
+                chart = effective_chart
+            except Exception:
+                # If resolution fails for any reason, fall back to the stored snapshot chart.
+                pass
+
             # Get dataset to access parquet file
             dataset = db.query(Dataset).filter(Dataset.id == chart.dataset_id).first()
             if not dataset:
@@ -1462,6 +1820,32 @@ class DashboardService:
         Returns:
             Dict with columns, data, pagination info
         """
+        try:
+            tile_cfg = DashboardService._tile_only_config(chart.config)
+            if getattr(chart, "source_dashboard_id", None) and getattr(chart, "source_chart_id", None):
+                src_dash = db.query(Dashboard).filter(
+                    Dashboard.id == chart.source_dashboard_id,
+                    Dashboard.is_insight == True,
+                ).first()
+                if src_dash:
+                    src_chart = db.query(DashboardChart).filter(
+                        DashboardChart.id == chart.source_chart_id,
+                        DashboardChart.dashboard_id == chart.source_dashboard_id,
+                    ).first()
+                    if src_chart:
+                        chart = SimpleNamespace(
+                            id=chart.id,
+                            dashboard_id=chart.dashboard_id,
+                            dataset_id=src_chart.dataset_id,
+                            chart_type=src_chart.chart_type,
+                            x_column=src_chart.x_column,
+                            y_column=src_chart.y_column,
+                            title=(src_chart.title or src_dash.name),
+                            config={**(src_chart.config or {}), **tile_cfg},
+                        )
+        except Exception:
+            pass
+
         dataset = db.query(Dataset).filter(Dataset.id == chart.dataset_id).first()
         if not dataset:
             raise Exception("Dataset not found")
@@ -1584,6 +1968,33 @@ class DashboardService:
         Returns:
             Query results with aggregation applied
         """
+        try:
+            tile_cfg = DashboardService._tile_only_config(chart.config)
+            if getattr(chart, "source_dashboard_id", None) and getattr(chart, "source_chart_id", None):
+                src_dash = db.query(Dashboard).filter(
+                    Dashboard.id == chart.source_dashboard_id,
+                    Dashboard.user_id == user.id,
+                    Dashboard.is_insight == True,
+                ).first()
+                if src_dash:
+                    src_chart = db.query(DashboardChart).filter(
+                        DashboardChart.id == chart.source_chart_id,
+                        DashboardChart.dashboard_id == chart.source_dashboard_id,
+                    ).first()
+                    if src_chart:
+                        chart = SimpleNamespace(
+                            id=chart.id,
+                            dashboard_id=chart.dashboard_id,
+                            dataset_id=src_chart.dataset_id,
+                            chart_type=src_chart.chart_type,
+                            x_column=src_chart.x_column,
+                            y_column=src_chart.y_column,
+                            title=(src_chart.title or src_dash.name),
+                            config={**(src_chart.config or {}), **tile_cfg},
+                        )
+        except Exception:
+            pass
+
         sql_query = chart.config.get("sql_query") if chart.config else None
         sql_sources = chart.config.get("sql_sources") if chart.config else None
         
