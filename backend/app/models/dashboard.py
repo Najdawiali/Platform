@@ -34,6 +34,9 @@ class Dashboard(Base):
 
     # Visibility
     is_private = Column(Boolean, default=True)
+
+    # Dashboard-level configuration (e.g., global filters). Kept separate from chart configs.
+    config = Column(JSON, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -261,7 +261,8 @@ def get_chart_aggregated_data(
     
     try:
         result = DashboardService.get_chart_aggregated_data(
-            chart, db, aggregation, offset, limit, columns, sort_column, sort_dir
+            chart, db, aggregation, offset, limit, columns, sort_column, sort_dir,
+            dashboard_config=(dashboard.config if hasattr(dashboard, "config") else None),
         )
         return result
     except ValueError as e:

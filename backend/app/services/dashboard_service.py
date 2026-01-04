@@ -321,6 +321,11 @@ class DashboardService:
 
         if getattr(dashboard_data, "is_private", None) is not None:
             dashboard.is_private = bool(dashboard_data.is_private)
+
+        # Dashboard-level config (global filters, etc.)
+        if getattr(dashboard_data, "config", None) is not None:
+            # Replace whole config object; frontend is expected to merge when needed.
+            dashboard.config = dashboard_data.config
         
         db.commit()
         db.refresh(dashboard)
@@ -562,7 +567,8 @@ class DashboardService:
         limit: Optional[int] = None,
         columns: Optional[str] = None,
         sort_column: Optional[str] = None,
-        sort_dir: Optional[str] = None
+        sort_dir: Optional[str] = None,
+        dashboard_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Get chart data for visualization.
@@ -855,6 +861,80 @@ class DashboardService:
             offset_clause = f"OFFSET {offset_val}" if offset_val else ""
 
             filter_predicate, filter_params = _build_filters_predicate((chart.config or {}).get("filters") if isinstance(chart.config, dict) else None)
+
+            # Dashboard-level global time range filter (applies only when mapped per chart).
+            global_time_status: Dict[str, Any] = {"applied": False}
+            global_time_predicate = ""
+            global_time_params: list[Any] = []
+            global_time_date_expr = ""
+            try:
+                dcfg = dashboard_config if isinstance(dashboard_config, dict) else {}
+                time_range = dcfg.get("globalTimeRange") if isinstance(dcfg.get("globalTimeRange"), dict) else None
+                if time_range:
+                    from_ymd = time_range.get("from") if isinstance(time_range.get("from"), str) else ""
+                    to_ymd = time_range.get("to") if isinstance(time_range.get("to"), str) else ""
+                    # mapping is stored per dashboard chart instance
+                    ccfg = chart.config if isinstance(chart.config, dict) else {}
+                    time_col = ccfg.get("globalTimeColumn") if isinstance(ccfg.get("globalTimeColumn"), str) else ""
+                    if not from_ymd and not to_ymd:
+                        global_time_status = {"applied": False, "reason": "time_range_empty"}
+                    elif not time_col:
+                        global_time_status = {"applied": False, "reason": "time_column_not_mapped"}
+                    elif available_cols and time_col not in available_cols:
+                        global_time_status = {"applied": False, "reason": "time_column_not_found", "column": time_col}
+                    else:
+                        time_col = _validate_ident(time_col)
+                        ts_expr = f"try_cast(\"{time_col}\" as timestamp)"
+                        d_expr = f"cast({ts_expr} as date)"
+                        global_time_date_expr = d_expr
+                        parts: list[str] = []
+                        params: list[Any] = []
+                        if from_ymd:
+                            parts.append(f"{d_expr} >= cast(? as date)")
+                            params.append(from_ymd)
+                        if to_ymd:
+                            parts.append(f"{d_expr} <= cast(? as date)")
+                            params.append(to_ymd)
+                        if parts:
+                            global_time_predicate = " AND ".join(parts)
+                            global_time_params = params
+                            global_time_status = {"applied": True, "column": time_col, "from": from_ymd or None, "to": to_ymd or None}
+
+                            # Debug stats to validate correctness (min/max + matched rows).
+                            # This is intentionally lightweight and only runs when the filter is active.
+                            try:
+                                matched = con.execute(
+                                    f"SELECT COUNT(*) FROM parquet_scan('{parquet_path}') WHERE {global_time_predicate}",
+                                    global_time_params,
+                                ).fetchone()[0]
+                                minmax = con.execute(
+                                    f"SELECT MIN({global_time_date_expr}), MAX({global_time_date_expr}) FROM parquet_scan('{parquet_path}')",
+                                ).fetchone()
+                                global_time_status["debug"] = {
+                                    "matched_rows": int(matched) if matched is not None else None,
+                                    "min_date": str(minmax[0]) if minmax and minmax[0] is not None else None,
+                                    "max_date": str(minmax[1]) if minmax and minmax[1] is not None else None,
+                                }
+                            except Exception as e:
+                                global_time_status["debug"] = {"error": str(e)}
+            except Exception:
+                global_time_status = {"applied": False, "reason": "time_filter_error"}
+
+            # Merge chart filters + dashboard global time filter
+            combined_predicate = ""
+            combined_params: list[Any] = []
+            if filter_predicate and global_time_predicate:
+                combined_predicate = f"({filter_predicate}) AND ({global_time_predicate})"
+                combined_params = [*filter_params, *global_time_params]
+            elif filter_predicate:
+                combined_predicate = filter_predicate
+                combined_params = [*filter_params]
+            elif global_time_predicate:
+                combined_predicate = global_time_predicate
+                combined_params = [*global_time_params]
+
+            # Back-compat: downstream query builders expect `filter_predicate/filter_params`.
+            filter_predicate, filter_params = combined_predicate, combined_params
 
             total_result_rows = total_rows
             is_aggregated = False
@@ -1351,6 +1431,9 @@ class DashboardService:
                     "limit": int(limit) if limit is not None else None,
                     "returned_columns": result_df.columns.tolist(),
                     "has_more": (offset_val + len(records)) < total_result_rows,
+                    "global_filter_status": {
+                        "time_range": global_time_status,
+                    },
                 },
             }
                 

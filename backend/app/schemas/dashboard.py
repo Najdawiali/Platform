@@ -52,6 +52,7 @@ class DashboardBase(BaseModel):
     description: Optional[str] = None
     is_main: bool = False
     is_private: bool = True
+    config: Optional[Dict[str, Any]] = None
 
 
 class DashboardCreate(DashboardBase):
@@ -65,6 +66,7 @@ class DashboardUpdate(BaseModel):
     description: Optional[str] = None
     is_main: Optional[bool] = None
     is_private: Optional[bool] = None
+    config: Optional[Dict[str, Any]] = None
 
 
 class Dashboard(DashboardBase):

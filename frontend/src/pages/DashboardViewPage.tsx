@@ -25,6 +25,24 @@ const toNumber = (v: any): number | null => {
 
 const isFiniteNumber = (v: any): v is number => typeof v === 'number' && Number.isFinite(v);
 
+type GlobalTimeOp =
+  | 'today'
+  | 'yesterday'
+  | 'last_30_days'
+  | 'last_n_days'
+  | 'last_n_weeks'
+  | 'last_n_months'
+  | 'this_week'
+  | 'prev_week'
+  | 'this_month'
+  | 'prev_month'
+  | 'this_year'
+  | 'prev_year'
+  | 'on'
+  | 'before'
+  | 'after'
+  | 'date_between';
+
 const SavedTableChart: React.FC<{
   dashboardId: string;
   chartId: string;
@@ -253,12 +271,185 @@ const DashboardViewPage: React.FC = () => {
 
   const [tab, setTab] = useState<'query' | 'preview' | 'config'>('config');
 
+  // Dashboard-global time range (stored on dashboard.config.globalTimeRange)
+  const [globalTimeOp, setGlobalTimeOp] = useState<GlobalTimeOp>('date_between');
+  const [globalFrom, setGlobalFrom] = useState<string>('');
+  const [globalTo, setGlobalTo] = useState<string>('');
+  const [globalTimeValue, setGlobalTimeValue] = useState<string>('');
+  const [globalTimeN, setGlobalTimeN] = useState<string>('');
+
+  // Global time range mapping UI (per chart)
+  const [timeMapChartId, setTimeMapChartId] = useState<string | null>(null);
+  const [timeMapColumns, setTimeMapColumns] = useState<string[]>([]);
+  const [timeMapSelected, setTimeMapSelected] = useState<string>('');
+
+  // Avoid spamming logs on every render.
+  const loggedGlobalTimeStatusRef = useRef<Set<string>>(new Set());
+
+  const startOfDayLocal = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const addDaysLocal = (d: Date, days: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
+  const startOfWeekLocal = (d: Date) => {
+    // Monday as start of week.
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    return addDaysLocal(startOfDayLocal(d), diff);
+  };
+  const toYMDLocal = (d: Date): string => {
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  };
+  const parseDateInputLocal = (ymd: string | undefined): Date | null => {
+    const t = (ymd ?? '').trim();
+    if (!t) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+    const dt = new Date(`${t}T00:00:00`);
+    return Number.isFinite(dt.getTime()) ? dt : null;
+  };
+
+  const computeGlobalTimeRange = (op: GlobalTimeOp): { from: string; to: string } => {
+    const now = new Date();
+    const todayStart = startOfDayLocal(now);
+    const todayYMD = toYMDLocal(todayStart);
+
+    if (op === 'date_between') {
+      return { from: (globalFrom || '').trim(), to: (globalTo || '').trim() };
+    }
+
+    if (op === 'on') {
+      const d = (globalTimeValue || '').trim();
+      return { from: d, to: d };
+    }
+    if (op === 'before') {
+      const cut = parseDateInputLocal(globalTimeValue);
+      if (!cut) return { from: '', to: '' };
+      const to = toYMDLocal(addDaysLocal(cut, -1));
+      return { from: '', to };
+    }
+    if (op === 'after') {
+      const cut = parseDateInputLocal(globalTimeValue);
+      if (!cut) return { from: '', to: '' };
+      const from = toYMDLocal(addDaysLocal(cut, 1));
+      return { from, to: '' };
+    }
+
+    if (op === 'today') {
+      return { from: todayYMD, to: todayYMD };
+    }
+    if (op === 'yesterday') {
+      const y = toYMDLocal(addDaysLocal(todayStart, -1));
+      return { from: y, to: y };
+    }
+
+    if (op === 'last_30_days') {
+      const from = toYMDLocal(addDaysLocal(todayStart, -30));
+      return { from, to: todayYMD };
+    }
+
+    const nParsed = Number(globalTimeN);
+    const nSafe = Number.isFinite(nParsed) ? nParsed : NaN;
+    if (op === 'last_n_days') {
+      const n = Math.max(1, Math.min(3650, Number.isFinite(nSafe) ? Math.floor(nSafe) : 7));
+      const from = toYMDLocal(addDaysLocal(todayStart, -n));
+      return { from, to: todayYMD };
+    }
+    if (op === 'last_n_weeks') {
+      const n = Math.max(1, Math.min(520, Number.isFinite(nSafe) ? Math.floor(nSafe) : 4));
+      const from = toYMDLocal(addDaysLocal(todayStart, -7 * n));
+      return { from, to: todayYMD };
+    }
+    if (op === 'last_n_months') {
+      const n = Math.max(1, Math.min(240, Number.isFinite(nSafe) ? Math.floor(nSafe) : 3));
+      const fromDate = new Date(todayStart.getFullYear(), todayStart.getMonth() - n, todayStart.getDate());
+      return { from: toYMDLocal(fromDate), to: todayYMD };
+    }
+
+    if (op === 'this_week') {
+      const start = startOfWeekLocal(now);
+      const end = addDaysLocal(start, 6);
+      return { from: toYMDLocal(start), to: toYMDLocal(end) };
+    }
+    if (op === 'prev_week') {
+      const end = addDaysLocal(startOfWeekLocal(now), -1);
+      const start = addDaysLocal(end, -6);
+      return { from: toYMDLocal(start), to: toYMDLocal(end) };
+    }
+    if (op === 'this_month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from: toYMDLocal(start), to: toYMDLocal(end) };
+    }
+    if (op === 'prev_month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { from: toYMDLocal(start), to: toYMDLocal(end) };
+    }
+    if (op === 'this_year') {
+      const start = new Date(now.getFullYear(), 0, 1);
+      const end = new Date(now.getFullYear(), 11, 31);
+      return { from: toYMDLocal(start), to: toYMDLocal(end) };
+    }
+    if (op === 'prev_year') {
+      const start = new Date(now.getFullYear() - 1, 0, 1);
+      const end = new Date(now.getFullYear() - 1, 11, 31);
+      return { from: toYMDLocal(start), to: toYMDLocal(end) };
+    }
+
+    return { from: '', to: '' };
+  };
+
   // Fetch dashboard
   const { data: dashboard, isLoading: dashboardLoading } = useQuery({
     queryKey: ['dashboard', id],
     queryFn: () => dashboardService.getDashboard(id!),
     enabled: !!id,
   });
+
+  useEffect(() => {
+    if (!dashboard) return;
+    const tr = (dashboard as any)?.config?.globalTimeRange;
+    if (tr && typeof tr === 'object') {
+      const opRaw = (tr as any).op;
+      const op: GlobalTimeOp = (
+        opRaw === 'today' ||
+        opRaw === 'yesterday' ||
+        opRaw === 'last_30_days' ||
+        opRaw === 'last_n_days' ||
+        opRaw === 'last_n_weeks' ||
+        opRaw === 'last_n_months' ||
+        opRaw === 'this_week' ||
+        opRaw === 'prev_week' ||
+        opRaw === 'this_month' ||
+        opRaw === 'prev_month' ||
+        opRaw === 'this_year' ||
+        opRaw === 'prev_year' ||
+        opRaw === 'on' ||
+        opRaw === 'before' ||
+        opRaw === 'after' ||
+        opRaw === 'date_between'
+      ) ? opRaw : 'date_between';
+      setGlobalTimeOp(op);
+
+      const value = typeof (tr as any).value === 'string' ? (tr as any).value : '';
+      const nVal = Number.isFinite((tr as any).n) ? String((tr as any).n) : '';
+      setGlobalTimeValue(value);
+      setGlobalTimeN(nVal);
+
+      // For custom range, keep showing the saved from/to.
+      if (op === 'date_between') {
+        setGlobalFrom(typeof (tr as any).from === 'string' ? (tr as any).from : '');
+        setGlobalTo(typeof (tr as any).to === 'string' ? (tr as any).to : '');
+      } else {
+        setGlobalFrom('');
+        setGlobalTo('');
+      }
+    } else {
+      setGlobalTimeOp('date_between');
+      setGlobalFrom('');
+      setGlobalTo('');
+      setGlobalTimeValue('');
+      setGlobalTimeN('');
+    }
+  }, [dashboard?.id]);
 
   // Fetch data for all charts
   const chartQueries = useQuery({
@@ -361,6 +552,7 @@ const DashboardViewPage: React.FC = () => {
             chartId: chart.id,
             data: data.data,  // Already aggregated on server!
             columns: data.columns,
+            metadata: (data as any).metadata,
           };
         } catch (error) {
           console.error(`Failed to load data for chart ${chart.id}:`, error);
@@ -451,7 +643,23 @@ const DashboardViewPage: React.FC = () => {
       );
     }
 
-    if (!chartData || chartData.error || chartData.data.length === 0) {
+    if (!chartData) {
+      return (
+        <div style={{
+          backgroundColor: 'white',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+          padding: '32px',
+          textAlign: 'center',
+          color: '#64748b',
+          fontSize: '14px'
+        }}>
+          Loading chart…
+        </div>
+      );
+    }
+
+    if (chartData.error) {
       return (
         <div style={{
           backgroundColor: '#fef2f2',
@@ -462,6 +670,25 @@ const DashboardViewPage: React.FC = () => {
         }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>⚠️</div>
           <div style={{ color: '#dc2626', fontSize: '14px' }}>Failed to load chart data</div>
+        </div>
+      );
+    }
+
+    if (!Array.isArray(chartData.data) || chartData.data.length === 0) {
+      return (
+        <div style={{
+          backgroundColor: 'white',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+          padding: '32px',
+          textAlign: 'center',
+        }}>
+          <div style={{ color: '#0f172a', fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>
+            No data matches the selected filters
+          </div>
+          <div style={{ color: '#64748b', fontSize: '13px' }}>
+            Try adjusting the global time range or clearing filters.
+          </div>
         </div>
       );
     }
@@ -3143,6 +3370,193 @@ const DashboardViewPage: React.FC = () => {
       <div style={{ flex: 1, overflow: 'auto', padding: '32px' }}>
         <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
 
+          {/* Dashboard-global filters (stored on dashboard.config; does not override insight config) */}
+          {!dashboard.is_insight ? (
+            <div style={{
+              marginBottom: '18px',
+              padding: '12px 14px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              backgroundColor: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>Global time range</div>
+              <select
+                value={globalTimeOp}
+                onChange={(e) => {
+                  const next = e.target.value as GlobalTimeOp;
+                  setGlobalTimeOp(next);
+                  // Clear irrelevant inputs when switching modes.
+                  if (next !== 'date_between') {
+                    setGlobalFrom('');
+                    setGlobalTo('');
+                  }
+                  if (next !== 'last_n_days' && next !== 'last_n_weeks' && next !== 'last_n_months') {
+                    setGlobalTimeN('');
+                  }
+                  if (next !== 'on' && next !== 'before' && next !== 'after') {
+                    setGlobalTimeValue('');
+                  }
+                }}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '12px',
+                  color: '#0f172a',
+                  backgroundColor: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="last_30_days">Last 30 days</option>
+                <option value="last_n_days">Last N days</option>
+                <option value="last_n_weeks">Last N weeks</option>
+                <option value="last_n_months">Last N months</option>
+                <option value="this_week">This week</option>
+                <option value="prev_week">Previous week</option>
+                <option value="this_month">This month</option>
+                <option value="prev_month">Previous month</option>
+                <option value="this_year">This year</option>
+                <option value="prev_year">Previous year</option>
+                <option value="on">On</option>
+                <option value="before">Before</option>
+                <option value="after">After</option>
+                <option value="date_between">Between</option>
+              </select>
+
+              {globalTimeOp === 'date_between' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="date"
+                    value={globalFrom}
+                    onChange={(e) => setGlobalFrom(e.target.value)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '12px',
+                      color: '#0f172a'
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>to</span>
+                  <input
+                    type="date"
+                    value={globalTo}
+                    onChange={(e) => setGlobalTo(e.target.value)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '12px',
+                      color: '#0f172a'
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              {globalTimeOp === 'on' || globalTimeOp === 'before' || globalTimeOp === 'after' ? (
+                <input
+                  type="date"
+                  value={globalTimeValue}
+                  onChange={(e) => setGlobalTimeValue(e.target.value)}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    color: '#0f172a'
+                  }}
+                />
+              ) : null}
+
+              {globalTimeOp === 'last_n_days' || globalTimeOp === 'last_n_weeks' || globalTimeOp === 'last_n_months' ? (
+                <input
+                  type="number"
+                  min={1}
+                  value={globalTimeN}
+                  onChange={(e) => setGlobalTimeN(e.target.value)}
+                  placeholder="N"
+                  style={{
+                    width: '92px',
+                    padding: '8px 10px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                    color: '#0f172a'
+                  }}
+                />
+              ) : null}
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!dashboard?.id) return;
+                  const computed = computeGlobalTimeRange(globalTimeOp);
+                  const nextConfig = {
+                    ...((dashboard as any).config || {}),
+                    globalTimeRange: {
+                      op: globalTimeOp,
+                      value: globalTimeValue || '',
+                      n: Number.isFinite(Number(globalTimeN)) ? Number(globalTimeN) : undefined,
+                      from: computed.from || '',
+                      to: computed.to || '',
+                    },
+                  };
+                  await dashboardService.updateDashboard(dashboard.id, { config: nextConfig });
+                  window.location.reload();
+                }}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  backgroundColor: '#0f172a',
+                  color: 'white',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!dashboard?.id) return;
+                  setGlobalTimeOp('date_between');
+                  setGlobalFrom('');
+                  setGlobalTo('');
+                  setGlobalTimeValue('');
+                  setGlobalTimeN('');
+                  const nextConfig = {
+                    ...((dashboard as any).config || {}),
+                    globalTimeRange: null,
+                  };
+                  await dashboardService.updateDashboard(dashboard.id, { config: nextConfig });
+                  window.location.reload();
+                }}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: 'white',
+                  color: '#0f172a',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Clear
+              </button>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                Map a time column per chart to apply.
+              </div>
+            </div>
+          ) : null}
+
           {/* Charts Grid */}
           {dashboard.charts.length === 0 ? (
             <div style={{
@@ -3164,6 +3578,55 @@ const DashboardViewPage: React.FC = () => {
             <div style={{ position: 'relative', width: '100%' }}>
               {dashboard.charts.map((chart, chartIndex) => {
                 const chartData = chartsData.find(d => d.chartId === chart.id);
+
+                // Debug: why global time range did/didn't apply.
+                try {
+                  const tr = (dashboard as any)?.config?.globalTimeRange;
+                  const hasTR = tr && typeof tr === 'object' && (
+                    typeof (tr as any).from === 'string' ||
+                    typeof (tr as any).to === 'string' ||
+                    typeof (tr as any).op === 'string'
+                  );
+                  if (hasTR) {
+                    const status = (chartData as any)?.metadata?.global_filter_status?.time_range;
+                    const op = typeof (tr as any).op === 'string' ? (tr as any).op : 'date_between';
+                    const from = typeof (tr as any).from === 'string' ? (tr as any).from : '';
+                    const to = typeof (tr as any).to === 'string' ? (tr as any).to : '';
+                    const key = `${dashboard.id}:${chart.id}:${op}:${from}:${to}`;
+
+                    // Log only once per chart per time-range selection.
+                    if (!loggedGlobalTimeStatusRef.current.has(key)) {
+                      const mappedCol = (chart.config && typeof chart.config === 'object' && typeof (chart.config as any).globalTimeColumn === 'string')
+                        ? (chart.config as any).globalTimeColumn
+                        : '';
+                      if (status && status.applied === false) {
+                        console.info('[dashboard global time] Filter not applied', {
+                          dashboardId: dashboard.id,
+                          chartId: chart.id,
+                          chartTitle: chart.title,
+                          chartType: chart.chart_type,
+                          globalTimeRange: { op, from, to },
+                          mappedTimeColumn: mappedCol,
+                          status,
+                        });
+                        loggedGlobalTimeStatusRef.current.add(key);
+                      } else if (status && status.applied === true) {
+                        console.info('[dashboard global time] Filter applied', {
+                          dashboardId: dashboard.id,
+                          chartId: chart.id,
+                          chartTitle: chart.title,
+                          chartType: chart.chart_type,
+                          globalTimeRange: { op, from, to },
+                          mappedTimeColumn: mappedCol,
+                          status,
+                        });
+                        loggedGlobalTimeStatusRef.current.add(key);
+                      }
+                    }
+                  }
+                } catch (e) {
+                  // no-op: logging should never break rendering
+                }
                 
                 // Calculate percentage-based positioning with gaps
                 const gap = 24; // Gap in pixels between charts
@@ -3219,14 +3682,40 @@ const DashboardViewPage: React.FC = () => {
                       justifyContent: 'space-between',
                       alignItems: 'center'
                     }}>
-                      <h3 style={{
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <h3 style={{
                         fontSize: '16px',
                         fontWeight: 600,
                         color: '#0f172a',
                         margin: 0
-                      }}>
-                        {chart.title || `${chart.chart_type.charAt(0).toUpperCase() + chart.chart_type.slice(1)} Chart`}
-                      </h3>
+                        }}>
+                          {chart.title || `${chart.chart_type.charAt(0).toUpperCase() + chart.chart_type.slice(1)} Chart`}
+                        </h3>
+
+                        {(() => {
+                          const tr = (dashboard as any)?.config?.globalTimeRange;
+                          const hasTR = tr && typeof tr === 'object' && (typeof (tr as any).from === 'string' || typeof (tr as any).to === 'string');
+                          const status = (chartData as any)?.metadata?.global_filter_status?.time_range;
+                          if (!status) return null;
+                          const applied = status.applied === true;
+                          if (!hasTR) return null;
+                          if (applied) return null;
+                          return (
+                            <span style={{
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              padding: '4px 8px',
+                              borderRadius: '999px',
+                              backgroundColor: '#fff7ed',
+                              color: '#9a3412',
+                              border: '1px solid #fed7aa',
+                              flexShrink: 0
+                            }}>
+                              Filter not applied
+                            </span>
+                          );
+                        })()}
+                      </div>
                       
                       {/* Chart Menu */}
                       <div style={{ position: 'relative' }}>
@@ -3272,6 +3761,52 @@ const DashboardViewPage: React.FC = () => {
                             }}
                             onClick={(e) => e.stopPropagation()}
                           >
+                            {/* Map time column */}
+                            <button
+                              onClick={async () => {
+                                try {
+                                  setOpenChartMenuId(null);
+                                  setTimeMapChartId(chart.id);
+                                  const ds = await datasetService.getDatasetById(chart.dataset_id);
+                                  const colsRaw = (ds as any)?.schema_info?.schema?.columns || (ds as any)?.schema_info?.columns || [];
+                                  const cols = Array.isArray(colsRaw)
+                                    ? colsRaw
+                                        .map((c: any) => (typeof c === 'string' ? c : (typeof c?.name === 'string' ? c.name : '')))
+                                        .map((s: string) => s.trim())
+                                        .filter(Boolean)
+                                    : [];
+                                  setTimeMapColumns(cols);
+                                  const current = (chart.config && typeof chart.config === 'object' && typeof chart.config.globalTimeColumn === 'string')
+                                    ? chart.config.globalTimeColumn
+                                    : '';
+                                  setTimeMapSelected(current);
+                                } catch (e) {
+                                  console.error('Failed to load dataset columns for time mapping', e);
+                                  alert('Failed to load dataset columns.');
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 16px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                color: '#334155',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                transition: 'background-color 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center' }}>🕒</span>
+                              <span>Map time column</span>
+                            </button>
+
                             {/* Export as PNG */}
                             <button
                               onClick={async () => {
@@ -3419,6 +3954,102 @@ const DashboardViewPage: React.FC = () => {
                         )}
                       </div>
                     </div>
+
+                    {/* Time mapping popover */}
+                    {timeMapChartId === chart.id ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 58,
+                          right: 20,
+                          zIndex: 120,
+                          backgroundColor: 'white',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '12px',
+                          boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                          padding: '12px',
+                          width: 320,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
+                          Time column mapping
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748b', marginBottom: 10 }}>
+                          Select the column this chart should use for the global time range.
+                        </div>
+                        <select
+                          value={timeMapSelected}
+                          onChange={(e) => setTimeMapSelected(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '10px',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '12px',
+                            color: '#0f172a',
+                            backgroundColor: 'white',
+                            cursor: 'pointer',
+                            marginBottom: 10,
+                          }}
+                        >
+                          <option value="">(Not mapped)</option>
+                          {timeMapColumns.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTimeMapChartId(null);
+                              setTimeMapColumns([]);
+                              setTimeMapSelected('');
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '10px',
+                              border: '1px solid #e2e8f0',
+                              backgroundColor: 'white',
+                              color: '#0f172a',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const nextCfg = { ...(chart.config || {}), globalTimeColumn: timeMapSelected || '' };
+                                await dashboardService.updateChart(id!, chart.id, { config: nextCfg });
+                                setTimeMapChartId(null);
+                                setTimeMapColumns([]);
+                                setTimeMapSelected('');
+                                window.location.reload();
+                              } catch (e) {
+                                console.error('Failed to save time column mapping', e);
+                                alert('Failed to save mapping');
+                              }
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '10px',
+                              border: 'none',
+                              backgroundColor: '#0f172a',
+                              color: 'white',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                     
                     {/* Chart Content */}
                     <div 

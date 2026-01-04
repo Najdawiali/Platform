@@ -36,6 +36,9 @@ def _ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE dashboards ADD COLUMN is_main BOOLEAN DEFAULT 0"))
             if "is_private" not in cols:
                 conn.execute(text("ALTER TABLE dashboards ADD COLUMN is_private BOOLEAN DEFAULT 1"))
+            if "config" not in cols:
+                # Stored as TEXT under SQLite; SQLAlchemy JSON will handle serialization.
+                conn.execute(text("ALTER TABLE dashboards ADD COLUMN config TEXT"))
     except Exception:
         # Do not block app startup if migration fails.
         pass

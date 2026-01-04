@@ -173,6 +173,7 @@ export interface Dashboard {
   is_insight?: boolean;
   is_main?: boolean;
   is_private?: boolean;
+  config?: Record<string, any>;
   created_at: string;
   updated_at?: string;
   charts: DashboardChart[];
