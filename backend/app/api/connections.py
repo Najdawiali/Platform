@@ -1,8 +1,20 @@
 # backend/app/api/connections.py
 import logging
+import base64
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from urllib.parse import quote, urlencode
+from uuid import uuid4
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+
+from jose import jwt
 
 from ..database import get_db
 from ..models.user import User
@@ -19,10 +31,31 @@ from ..schemas.connection import (
 )
 from ..services.connection_service import ConnectionService
 from .auth import get_current_user
+from ..config import settings
+
+
+class SalesforceOAuthStartRequest(BaseModel):
+    """Request to start Salesforce OAuth for creating a connection."""
+
+    name: Optional[str] = None
+    auth_base_url: Optional[str] = None
+    api_version: Optional[str] = None
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+
+def _b64url_no_pad(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _generate_pkce_pair() -> tuple[str, str]:
+    """Generate (code_verifier, code_challenge) for PKCE (S256)."""
+    # RFC 7636: verifier length 43-128 chars (unreserved charset). urlsafe_b64 of 32 bytes -> 43 chars.
+    verifier = _b64url_no_pad(secrets.token_bytes(32))
+    challenge = _b64url_no_pad(hashlib.sha256(verifier.encode("ascii")).digest())
+    return verifier, challenge
 
 # Disable redirect_slashes to avoid 307 redirects
 # This allows both /api/connections and /api/connections/ to work
@@ -61,6 +94,222 @@ def test_connection(
     )
 
     return result
+
+
+@router.post("/salesforce/oauth/start")
+def salesforce_oauth_start(
+    body: SalesforceOAuthStartRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Start Salesforce OAuth (Authorization Code) flow.
+
+    Returns an `authorize_url` that the frontend should redirect the browser to.
+    """
+    if not settings.SALESFORCE_CLIENT_ID or not settings.SALESFORCE_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                "Salesforce OAuth not configured. Set SALESFORCE_CLIENT_ID and SALESFORCE_CLIENT_SECRET "
+                "in backend/.env (see backend/.env.example) and restart the backend."
+            ),
+        )
+
+    auth_base_url = (body.auth_base_url or settings.SALESFORCE_AUTH_BASE_URL or "").strip()
+    if not auth_base_url:
+        auth_base_url = "https://login.salesforce.com"
+    auth_base_url = auth_base_url.rstrip("/")
+    if not auth_base_url.startswith("http://") and not auth_base_url.startswith("https://"):
+        auth_base_url = "https://" + auth_base_url
+
+    payload = {
+        "uid": current_user.id,
+        "nonce": str(uuid4()),
+        "name": (body.name or "Salesforce").strip() or "Salesforce",
+        "auth_base_url": auth_base_url,
+        "api_version": (body.api_version or "").strip(),
+        # PKCE verifier for orgs that require code challenge
+        "pkce_v": None,
+        "exp": datetime.utcnow() + timedelta(minutes=10),
+    }
+
+    pkce_verifier, pkce_challenge = _generate_pkce_pair()
+    payload["pkce_v"] = pkce_verifier
+    state = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+    params = {
+        "response_type": "code",
+        "client_id": settings.SALESFORCE_CLIENT_ID,
+        "redirect_uri": settings.SALESFORCE_REDIRECT_URI,
+        "scope": settings.SALESFORCE_SCOPES,
+        "state": state,
+        # PKCE (S256)
+        "code_challenge": pkce_challenge,
+        "code_challenge_method": "S256",
+    }
+    authorize_url = f"{auth_base_url}/services/oauth2/authorize?{urlencode(params)}"
+    return {"authorize_url": authorize_url}
+
+
+@router.get("/salesforce/oauth/callback")
+async def salesforce_oauth_callback(
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    error_description: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Handle Salesforce OAuth callback.
+
+    Exchanges the authorization code for tokens, creates a Salesforce connection,
+    then redirects back to the frontend create flow.
+    """
+
+    # If the user denies access or Salesforce returns an error, they will often
+    # redirect here with `error` query params (and without `code`). Handle this
+    # explicitly so we can show a friendly message in the UI.
+    if error:
+        msg = (error_description or error).strip()
+        redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_oauth_error={quote(msg)}"
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    # If someone opens this URL directly, or the provider did not include params,
+    # redirect back with guidance instead of returning a FastAPI 422.
+    if not code or not state:
+        msg = (
+            "Missing OAuth query parameters (code/state). "
+            "Do not open this URL directly; start from 'Sign in with Salesforce' in the app. "
+            f"Verify your Salesforce callback URL is set to: {settings.SALESFORCE_REDIRECT_URI}"
+        )
+        redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_oauth_error={quote(msg)}"
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    try:
+        payload = jwt.decode(state, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except Exception:
+        msg = "Invalid OAuth state. Please retry 'Sign in with Salesforce'."
+        redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_oauth_error={quote(msg)}"
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    user_id = payload.get("uid")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found")
+
+    if not settings.SALESFORCE_CLIENT_ID or not settings.SALESFORCE_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                "Salesforce OAuth not configured. Set SALESFORCE_CLIENT_ID and SALESFORCE_CLIENT_SECRET "
+                "in backend/.env (see backend/.env.example) and restart the backend."
+            ),
+        )
+
+    auth_base_url = (payload.get("auth_base_url") or settings.SALESFORCE_AUTH_BASE_URL or "https://login.salesforce.com").rstrip("/")
+    token_url = f"{auth_base_url}/services/oauth2/token"
+
+    code_verifier = (payload.get("pkce_v") or "").strip()
+
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": settings.SALESFORCE_CLIENT_ID,
+        "client_secret": settings.SALESFORCE_CLIENT_SECRET,
+        "redirect_uri": settings.SALESFORCE_REDIRECT_URI,
+        "code": code,
+    }
+
+    # Include PKCE verifier if present (required by some orgs)
+    if code_verifier:
+        data["code_verifier"] = code_verifier
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(token_url, data=data)
+        if resp.status_code >= 400:
+            # Try to surface a useful message
+            detail = None
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Salesforce token exchange failed: {detail}")
+        token = resp.json() if resp.content else {}
+
+    refresh_token = token.get("refresh_token")
+    instance_url = token.get("instance_url")
+    access_token = token.get("access_token")
+    identity_url = token.get("id")
+
+    if not refresh_token or not instance_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Salesforce did not return a refresh_token/instance_url. Ensure your Connected App allows refresh tokens and requested scopes include refresh_token.",
+        )
+
+    # Best-effort identity lookup for friendlier naming + metadata.
+    sf_identity: dict = {}
+    if access_token and identity_url:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                ident_resp = await client.get(
+                    identity_url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if ident_resp.status_code < 400:
+                    sf_identity = ident_resp.json() if ident_resp.content else {}
+        except Exception:
+            sf_identity = {}
+
+    sf_username = None
+    sf_display_name = None
+    sf_user_id = None
+    sf_org_id = None
+    try:
+        sf_username = sf_identity.get("username")
+        sf_display_name = sf_identity.get("display_name")
+        sf_user_id = sf_identity.get("user_id")
+        sf_org_id = sf_identity.get("organization_id")
+    except Exception:
+        pass
+
+    base_name = (payload.get("name") or "Salesforce").strip() or "Salesforce"
+    connection_name = base_name
+    if sf_username:
+        connection_name = f"Salesforce - {sf_username}"
+    elif sf_display_name:
+        connection_name = f"Salesforce - {sf_display_name}"
+
+    credentials = {
+        "auth_type": "oauth",
+        "refresh_token": refresh_token,
+        "instance_url": instance_url,
+        "access_token": access_token,
+        "auth_base_url": auth_base_url,
+        "identity_url": identity_url,
+        "sf_username": sf_username,
+        "sf_display_name": sf_display_name,
+        "sf_user_id": sf_user_id,
+        "sf_org_id": sf_org_id,
+        "api_version": (payload.get("api_version") or "").strip() or None,
+        "selected_objects": [],
+        "selected_fields": {},
+        "retention_days": 90,
+        "auto_sync_enabled": True,
+        "auto_sync_interval_seconds": 3600,
+    }
+
+    connection = ConnectionService.create_connection(
+        user=user,
+        name=connection_name,
+        source_type=SourceType.SALESFORCE,
+        credentials=credentials,
+        description="Salesforce (OAuth)",
+        db=db,
+    )
+
+    redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_connection_id={connection.id}"
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.post("/", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
@@ -260,6 +509,18 @@ def get_connection_collections(
     """
     collections = ConnectionService.get_connection_collections(connection_id, current_user, db)
     return {"collections": collections}
+
+
+@router.get("/{connection_id}/fields")
+def get_salesforce_fields(
+    connection_id: str,
+    object_name: str = Query(..., description="Salesforce object API name (e.g., Account)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List fields for a Salesforce object (for field selection UI)."""
+    fields = ConnectionService.get_salesforce_object_fields(connection_id, current_user, db, object_name)
+    return {"fields": fields}
 
 
 @router.get("/{connection_id}/databases")

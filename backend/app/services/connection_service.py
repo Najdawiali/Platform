@@ -18,6 +18,7 @@ from ..connectors.mdx_connector import MDXConnector
 from ..connectors.pdf_connector import PDFConnector
 from ..connectors.mongodb_connector import MongoDBConnector
 from ..connectors.postgresql_connector import PostgreSQLConnector
+from ..connectors.salesforce_connector import SalesforceConnector
 
 
 # Future imports:
@@ -91,6 +92,11 @@ class ConnectionService:
                 {"name": "database", "type": "text", "label": "Database", "required": True},
                 {"name": "username", "type": "text", "label": "Username", "required": True},
                 {"name": "password", "type": "password", "label": "Password", "required": True}
+            ],
+            SourceType.SALESFORCE: [
+                # OAuth is handled via a browser redirect. Credentials are stored after callback.
+                {"name": "auth_type", "type": "text", "label": "Auth Type", "required": True, "default": "oauth"},
+                {"name": "api_version", "type": "text", "label": "API Version (Optional)", "required": False, "placeholder": "e.g. 59.0"}
             ]
         }
 
@@ -113,6 +119,8 @@ class ConnectionService:
             SourceType.MONGODB: "Provide your MongoDB connection string and database name.",
             SourceType.POSTGRESQL: "Enter PostgreSQL connection details to connect to your database.",
             SourceType.MYSQL: "Enter MySQL connection details to connect to your database."
+            ,
+            SourceType.SALESFORCE: "Sign in with Salesforce (OAuth). Then select objects and fields to ingest."
         }
 
         return instructions_map.get(source_type, "Configure your connection.")
@@ -259,6 +267,52 @@ class ConnectionService:
                         "format": schema.get("format", "pdf")
                     }
 
+                return result
+
+            elif source_type == SourceType.SALESFORCE:
+                auth_type = (credentials.get("auth_type") or "").strip().lower()
+                refresh_token = credentials.get("refresh_token")
+                if auth_type == "oauth" or refresh_token:
+                    if not refresh_token:
+                        return {"success": False, "message": "refresh_token is required for OAuth"}
+                    connector = SalesforceConnector(
+                        auth_type="oauth",
+                        refresh_token=refresh_token,
+                        access_token=credentials.get("access_token"),
+                        instance_url=credentials.get("instance_url"),
+                        auth_base_url=credentials.get("auth_base_url"),
+                        api_version=credentials.get("api_version"),
+                    )
+                else:
+                    username = credentials.get("username")
+                    password = credentials.get("password")
+                    token = credentials.get("token")
+                    if not username or not password or not token:
+                        return {"success": False, "message": "username, password, and token are required"}
+
+                    connector = SalesforceConnector(
+                        username=username,
+                        password=password,
+                        security_token=token,
+                        login_domain=credentials.get("login_domain") or "login",
+                        api_version=credentials.get("api_version"),
+                    )
+                result = connector.test_connection()
+                if result.get("success"):
+                    connector.connect()
+                    try:
+                        objects = connector.list_objects()
+                    except Exception as e:
+                        msg = str(e)
+                        return {"success": False, "message": msg}
+                    finally:
+                        connector.disconnect()
+
+                    meta = {"objects": objects, "object_count": len(objects)}
+                    if refresh_token:
+                        meta["access_token"] = getattr(connector, "access_token", None)
+                        meta["instance_url"] = getattr(connector, "instance_url", None)
+                    result["metadata"] = meta
                 return result
 
             elif source_type == SourceType.SNOWFLAKE:
@@ -711,6 +765,15 @@ class ConnectionService:
                         if not isinstance(credentials.get("selected_tables"), list):
                             credentials["selected_tables"] = tables
 
+                elif connection.source_type == SourceType.SALESFORCE:
+                    objects = metadata.get("objects") or []
+                    if isinstance(objects, list):
+                        credentials["schema_snapshot"] = objects
+                        if not isinstance(credentials.get("selected_objects"), list):
+                            credentials["selected_objects"] = objects
+                    credentials.setdefault("selected_fields", {})
+                    credentials.setdefault("retention_days", 90)
+
             connection.credentials = credentials
             connection.test_status = "success" if test_result["success"] else "failed"
             connection.test_message = test_result["message"]
@@ -809,6 +872,22 @@ class ConnectionService:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to get tables: {str(e)}"
+                )
+
+        # Salesforce support
+        elif connection.source_type == SourceType.SALESFORCE:
+            try:
+                selected = connection.credentials.get('selected_objects')
+                if selected and isinstance(selected, list):
+                    return selected
+                snapshot = connection.credentials.get('schema_snapshot')
+                if snapshot and isinstance(snapshot, list):
+                    return snapshot
+                return []
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to get objects: {str(e)}"
                 )
         
         else:
@@ -917,12 +996,79 @@ class ConnectionService:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to get databases: {str(e)}"
                 )
+
+        # Salesforce support (present as single pseudo-database)
+        elif connection.source_type == SourceType.SALESFORCE:
+            try:
+                key = 'salesforce'
+                selected = connection.credentials.get('selected_objects')
+                if selected and isinstance(selected, list):
+                    return {key: selected}
+                snapshot = connection.credentials.get('schema_snapshot')
+                if snapshot and isinstance(snapshot, list):
+                    return {key: snapshot}
+                return {key: []}
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to get objects: {str(e)}"
+                )
         
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Getting databases not supported for {connection.source_type}"
             )
+
+    @staticmethod
+    def get_salesforce_object_fields(
+        connection_id: str,
+        user: User,
+        db: Session,
+        object_name: str,
+    ) -> List[Dict[str, Any]]:
+        """Return Salesforce field metadata for a given object."""
+        from fastapi import HTTPException, status
+
+        connection = ConnectionService.get_connection_by_id(connection_id, user, db)
+        if not connection:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+        if connection.source_type != SourceType.SALESFORCE:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a Salesforce connection")
+        if not object_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="object_name is required")
+
+        creds = dict(connection.credentials or {})
+        auth_type = (creds.get("auth_type") or "").strip().lower()
+        if auth_type == "oauth" or creds.get("refresh_token"):
+            connector = SalesforceConnector(
+                auth_type="oauth",
+                refresh_token=creds.get("refresh_token"),
+                access_token=creds.get("access_token"),
+                instance_url=creds.get("instance_url"),
+                auth_base_url=creds.get("auth_base_url"),
+                api_version=creds.get("api_version"),
+            )
+        else:
+            connector = SalesforceConnector(
+                username=creds.get('username'),
+                password=creds.get('password'),
+                security_token=creds.get('token'),
+                login_domain=creds.get('login_domain') or 'login',
+                api_version=creds.get('api_version'),
+            )
+
+        if not connector.connect():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to connect to Salesforce")
+        try:
+            return connector.describe_object_fields(object_name)
+        except Exception as e:
+            msg = str(e)
+            if "REQUEST_LIMIT_EXCEEDED" in msg:
+                raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=msg)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=msg)
+        finally:
+            connector.disconnect()
 
     @staticmethod
     def query_connection_data(
@@ -986,6 +1132,34 @@ class ConnectionService:
                     database=database or creds.get('database'),
                     collection=collection
                 )
+
+            elif source_type == SourceType.SALESFORCE:
+                print("[DEBUG] Initializing Salesforce connector")
+                from ..connectors.salesforce_connector import SalesforceConnector
+                fields_map = creds.get('selected_fields') if isinstance(creds.get('selected_fields'), dict) else {}
+                selected_fields = fields_map.get(collection) if isinstance(fields_map.get(collection), list) else None
+                auth_type = (creds.get("auth_type") or "").strip().lower()
+                if auth_type == "oauth" or creds.get("refresh_token"):
+                    connector = SalesforceConnector(
+                        auth_type="oauth",
+                        refresh_token=creds.get("refresh_token"),
+                        access_token=creds.get("access_token"),
+                        instance_url=creds.get("instance_url"),
+                        auth_base_url=creds.get("auth_base_url"),
+                        api_version=creds.get("api_version"),
+                        object_name=collection,
+                        fields=selected_fields,
+                    )
+                else:
+                    connector = SalesforceConnector(
+                        username=creds.get('username'),
+                        password=creds.get('password'),
+                        security_token=creds.get('token'),
+                        login_domain=creds.get('login_domain') or 'login',
+                        api_version=creds.get('api_version'),
+                        object_name=collection,
+                        fields=selected_fields,
+                    )
             
             if connector:
                 print("[DEBUG] Connecting...")
@@ -1094,6 +1268,29 @@ class ConnectionService:
                 )
 
             all_rows: List[Dict[str, Any]] = snap.sample_rows or []
+            page = _slice_rows(all_rows, offset, limit)
+            return {
+                "rows": page,
+                "columns": snap.columns or [],
+                "total_rows": int(snap.row_count or 0),
+                "returned_rows": len(page),
+                "offset": offset,
+                "limit": limit,
+            }
+
+        if source_type == SourceType.SALESFORCE:
+            selected_objects = creds.get('selected_objects')
+            if selected_objects and isinstance(selected_objects, list) and collection not in selected_objects:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Object not enabled for this connection")
+
+            snap = _find_snapshot(connection.id, 'salesforce', None, collection)
+            if not snap:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This object has not been synced yet. Click Sync Now to capture a snapshot.",
+                )
+
+            all_rows = snap.sample_rows or []
             page = _slice_rows(all_rows, offset, limit)
             return {
                 "rows": page,
@@ -1820,6 +2017,183 @@ class ConnectionService:
                             continue
 
                 connector.disconnect()
+
+            elif source_type == SourceType.SALESFORCE:
+                import os
+                import re
+                import shutil
+                from datetime import timedelta
+
+                # Resolve user (required for dataset ownership + upload paths)
+                user = db.query(User).filter(User.id == connection.user_id).first()
+                if not user:
+                    raise Exception("User not found for connection")
+
+                prev_snapshot = creds.get('schema_snapshot') if isinstance(creds.get('schema_snapshot'), list) else None
+
+                auth_type = (creds.get("auth_type") or "").strip().lower()
+                oauth_refresh_token = creds.get("refresh_token")
+
+                # Fetch all available objects (OAuth refresh happens once here)
+                if auth_type == "oauth" or oauth_refresh_token:
+                    sf = SalesforceConnector(
+                        auth_type="oauth",
+                        refresh_token=oauth_refresh_token,
+                        access_token=creds.get("access_token"),
+                        instance_url=creds.get("instance_url"),
+                        auth_base_url=creds.get("auth_base_url"),
+                        api_version=creds.get('api_version'),
+                    )
+                else:
+                    sf = SalesforceConnector(
+                        username=creds.get('username'),
+                        password=creds.get('password'),
+                        security_token=creds.get('token'),
+                        login_domain=creds.get('login_domain') or 'login',
+                        api_version=creds.get('api_version'),
+                    )
+
+                if not sf.connect():
+                    raise Exception("Failed to connect to Salesforce")
+                try:
+                    all_objects = sf.list_objects()
+                    if auth_type == "oauth" or oauth_refresh_token:
+                        creds["auth_type"] = "oauth"
+                        if getattr(sf, "access_token", None):
+                            creds["access_token"] = getattr(sf, "access_token")
+                        if getattr(sf, "instance_url", None):
+                            creds["instance_url"] = getattr(sf, "instance_url")
+                finally:
+                    sf.disconnect()
+
+                creds['schema_snapshot'] = all_objects
+
+                # Maintain selection semantics ("select all" -> freeze to latest snapshot)
+                selected = creds.get('selected_objects')
+                if selected and isinstance(selected, list):
+                    if prev_snapshot is not None and set(selected) == set(prev_snapshot):
+                        creds['selected_objects'] = all_objects
+                    else:
+                        filtered = [o for o in selected if o in all_objects]
+                        removed_objs = [o for o in selected if o not in all_objects]
+                        if removed_objs:
+                            removed.extend(removed_objs)
+                        creds['selected_objects'] = filtered
+                else:
+                    creds['selected_objects'] = all_objects
+
+                # Retention config (snapshots on disk)
+                retention_days = creds.get('retention_days')
+                try:
+                    retention_days = int(retention_days) if retention_days is not None else 90
+                except Exception:
+                    retention_days = 90
+                if retention_days <= 0:
+                    retention_days = 90
+                creds['retention_days'] = retention_days
+
+                fields_map = creds.get('selected_fields') if isinstance(creds.get('selected_fields'), dict) else {}
+                creds['selected_fields'] = fields_map
+
+                tracked_objects = creds.get('selected_objects') if isinstance(creds.get('selected_objects'), list) else []
+                tracked_keys: Set[Tuple[Optional[str], Optional[str], str]] = set(
+                    _snapshot_key('salesforce', None, o) for o in tracked_objects
+                )
+                _prune_snapshots(tracked_keys)
+
+                from ..models.dataset import Dataset
+                from ..services.dataset_service import DatasetService
+
+                base_dir = os.path.join("./uploads", user.id, "salesforce", connection.id)
+                now = datetime.utcnow()
+                snapshot_label = now.strftime("%Y%m%dT%H%M%SZ")
+
+                for obj in tracked_objects:
+                    try:
+                        selected_fields = fields_map.get(obj) if isinstance(fields_map.get(obj), list) else None
+                        if not selected_fields:
+                            # If UI hasn't set fields yet, we keep it safe but functional
+                            selected_fields = ["Id"]
+
+                        if auth_type == "oauth" or oauth_refresh_token:
+                            # Use the refreshed access_token/instance_url from above for all objects
+                            obj_connector = SalesforceConnector(
+                                auth_type="oauth",
+                                access_token=creds.get("access_token"),
+                                instance_url=creds.get("instance_url"),
+                                api_version=creds.get('api_version'),
+                                object_name=obj,
+                                fields=selected_fields,
+                            )
+                        else:
+                            obj_connector = SalesforceConnector(
+                                username=creds.get('username'),
+                                password=creds.get('password'),
+                                security_token=creds.get('token'),
+                                login_domain=creds.get('login_domain') or 'login',
+                                api_version=creds.get('api_version'),
+                                object_name=obj,
+                                fields=selected_fields,
+                            )
+
+                        dataset = (
+                            db.query(Dataset)
+                            .filter(Dataset.connection_id == connection.id, Dataset.source_identifier == obj)
+                            .first()
+                        )
+                        if dataset is None:
+                            dataset = Dataset(
+                                user_id=user.id,
+                                connection_id=connection.id,
+                                name=obj,
+                                description=f"Salesforce object: {obj}",
+                                source_type="salesforce",
+                                source_identifier=obj,
+                                status="processing",
+                            )
+                            db.add(dataset)
+                            db.commit()
+                            db.refresh(dataset)
+
+                        parquet_path = os.path.join(base_dir, obj, "snapshots", snapshot_label, "data.parquet")
+                        DatasetService.refresh_dataset_from_connector(dataset, obj_connector, parquet_path, db=db)
+
+                        # Update lightweight snapshot metadata for UI
+                        obj_connector.connect()
+                        try:
+                            schema = obj_connector.get_schema() or {}
+                            row_count = schema.get('row_count')
+                            df = obj_connector.fetch_data(limit=50, offset=0)
+                        finally:
+                            obj_connector.disconnect()
+
+                        _upsert_snapshot(
+                            'salesforce',
+                            None,
+                            obj,
+                            schema.get('columns', []),
+                            int(row_count) if row_count is not None else None,
+                            df.to_dict(orient='records') if df is not None else [],
+                        )
+                    except Exception:
+                        continue
+
+                # Delete snapshots older than retention_days
+                cutoff = now - timedelta(days=retention_days)
+                ts_re = re.compile(r"^\d{8}T\d{6}Z$")
+                for obj in tracked_objects:
+                    snapshots_root = os.path.join(base_dir, obj, "snapshots")
+                    if not os.path.isdir(snapshots_root):
+                        continue
+                    for entry in os.listdir(snapshots_root):
+                        if not ts_re.match(entry or ""):
+                            continue
+                        try:
+                            dt = datetime.strptime(entry, "%Y%m%dT%H%M%SZ")
+                        except Exception:
+                            continue
+                        if dt < cutoff:
+                            shutil.rmtree(os.path.join(snapshots_root, entry), ignore_errors=True)
 
             # File-based and other connectors: no-op
 

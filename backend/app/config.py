@@ -1,9 +1,17 @@
 # backend/app/config.py
-from pydantic_settings import BaseSettings
+from pathlib import Path
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # Load `.env` from the backend directory (not the current working dir)
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parents[1] / ".env"),
+        case_sensitive=True,
+    )
+
     # Database
     DATABASE_URL: str = "sqlite:///./data_platform.db"  # Start with SQLite for simplicity
 
@@ -32,14 +40,19 @@ class Settings(BaseSettings):
     # Frontend URL for redirects after OAuth
     FRONTEND_URL: str = "http://localhost:5204"
 
+    # OAuth - Salesforce (for data source connections)
+    SALESFORCE_CLIENT_ID: Optional[str] = None
+    SALESFORCE_CLIENT_SECRET: Optional[str] = None
+    # Callback handled by backend, then redirects to FRONTEND_URL
+    SALESFORCE_REDIRECT_URI: str = "http://localhost:8000/api/connections/salesforce/oauth/callback"
+    # Default auth base URL (prod). For sandbox use https://test.salesforce.com
+    SALESFORCE_AUTH_BASE_URL: str = "https://login.salesforce.com"
+    # Request refresh token + API access
+    SALESFORCE_SCOPES: str = "refresh_token api"
+
     # Scheduled connection sync
     AUTO_SYNC_ENABLED: bool = True
     # Global tick interval is handled in code; per-connection interval lives in credentials.
     AUTO_SYNC_INTERVAL_SECONDS: int = 3600  # Kept for backward compatibility
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
 
 settings = Settings()

@@ -124,4 +124,24 @@ export const connectionService = {
     const response = await api.post(`/api/connections/${connectionId}/sync`);
     return response.data;
   },
+
+  /**
+   * Start Salesforce OAuth flow.
+   * Backend returns an authorize_url to redirect the browser to.
+   */
+  async startSalesforceOAuth(params?: { name?: string; auth_base_url?: string; api_version?: string }): Promise<{ authorize_url: string }> {
+    const response = await api.post('/api/connections/salesforce/oauth/start', params || {});
+    return response.data;
+  },
+
+  /**
+   * List fields for a Salesforce object (for search/selection UI).
+   */
+  async getSalesforceFields(connectionId: string, objectName: string): Promise<Array<{ name: string; label?: string; type?: string; nillable?: boolean; custom?: boolean }>> {
+    const response = await api.get<{ fields: Array<{ name: string; label?: string; type?: string; nillable?: boolean; custom?: boolean }> }>(
+      `/api/connections/${connectionId}/fields`,
+      { params: { object_name: objectName } }
+    );
+    return response.data?.fields || [];
+  },
 };

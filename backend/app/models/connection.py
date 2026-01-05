@@ -21,6 +21,7 @@ class SourceType(str, enum.Enum):
     MONGODB = "mongodb"
     POSTGRESQL = "postgresql"
     MYSQL = "mysql"
+    SALESFORCE = "salesforce"
 
 
 class Connection(Base):

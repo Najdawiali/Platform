@@ -28,6 +28,101 @@ class DatasetService:
     """Service for handling dataset operations across multiple source types"""
 
     @staticmethod
+    def refresh_dataset_from_connector(
+        dataset: Dataset,
+        connector,
+        parquet_path: str,
+        db: Session,
+        chunk_size: int = 10000,
+    ) -> Dataset:
+        """Full-refresh a dataset by streaming from a connector into a Parquet file.
+
+        This is designed for API/DB sources (e.g., Salesforce) where we want Parquet-first storage.
+        """
+        os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
+
+        dataset.status = "processing"
+        db.commit()
+        db.refresh(dataset)
+
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        writer = None
+        try:
+            if not connector.connect():
+                raise Exception("Failed to connect to source")
+
+            validation = connector.validate_source()
+            if not validation.get("is_valid"):
+                raise Exception(f"Validation failed: {', '.join(validation.get('errors') or [])}")
+
+            schema = connector.get_schema() or {}
+
+            chunk_count = 0
+            quality_reports = []
+            preprocessing_reports = []
+
+            for chunk in connector.fetch_data_chunked(chunk_size=chunk_size):
+                chunk_count += 1
+                preprocessed_chunk, prep_report = DataPreprocessingService.preprocess_dataframe(chunk)
+                preprocessing_reports.append(prep_report)
+
+                table = pa.Table.from_pandas(preprocessed_chunk)
+                if writer is None:
+                    writer = pq.ParquetWriter(parquet_path, table.schema)
+                writer.write_table(table)
+
+                if chunk_count <= 5:
+                    quality_reports.append(
+                        QualityService.perform_quality_checks(
+                            preprocessed_chunk,
+                            is_first_chunk=(chunk_count == 1),
+                        )
+                    )
+
+            if writer:
+                writer.close()
+                writer = None
+
+            aggregated_quality = QualityService.aggregate_chunk_reports(quality_reports) if quality_reports else None
+
+            preprocessing_summary = None
+            if preprocessing_reports:
+                preprocessing_summary = {
+                    "chunks_processed": len(preprocessing_reports),
+                    "total_transformations": sum(len(r["transformations_applied"]) for r in preprocessing_reports),
+                    "total_issues_fixed": sum(len(r["issues_fixed"]) for r in preprocessing_reports),
+                    "data_types_inferred": preprocessing_reports[0]["data_types_inferred"],
+                    "sample_issues": (preprocessing_reports[0]["issues_fixed"] or [])[:10],
+                }
+
+            dataset.row_count = schema.get("row_count")
+            dataset.column_count = schema.get("column_count")
+            dataset.schema_info = {
+                "schema": schema,
+                "validation": validation,
+                "quality_report": aggregated_quality,
+                "preprocessing_summary": preprocessing_summary,
+                "parquet_path": parquet_path,
+            }
+            dataset.status = "ready"
+            db.commit()
+            db.refresh(dataset)
+            return dataset
+
+        finally:
+            try:
+                connector.disconnect()
+            except Exception:
+                pass
+            try:
+                if writer:
+                    writer.close()
+            except Exception:
+                pass
+
+    @staticmethod
     def create_dataset_from_database(
             connection: Connection,
             source_identifier: str,  # e.g., "database.schema.table" or "collection_name"

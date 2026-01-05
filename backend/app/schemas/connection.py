@@ -19,6 +19,7 @@ class SourceType(str, Enum):
     MONGODB = "mongodb"
     POSTGRESQL = "postgresql"
     MYSQL = "mysql"
+    SALESFORCE = "salesforce"
 
 
 # ===== CSV/Excel/JSON/TXT Schemas =====

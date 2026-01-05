@@ -84,7 +84,7 @@ export interface DatasetUploadResponse {
 }
 
 // Connection Types
-export type SourceType = 'csv' | 'excel' | 'json' | 'txt' | 'md' | 'mdx' | 'pdf' | 'snowflake' | 'sqlserver' | 'mongodb' | 'postgresql' | 'mysql';
+export type SourceType = 'csv' | 'excel' | 'json' | 'txt' | 'md' | 'mdx' | 'pdf' | 'snowflake' | 'sqlserver' | 'mongodb' | 'postgresql' | 'mysql' | 'salesforce';
 
 export interface Connection {
   id: string;

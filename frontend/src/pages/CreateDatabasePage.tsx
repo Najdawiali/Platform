@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Eye, EyeOff, FileText, Leaf, Server } from 'lucide-react';
 
@@ -7,7 +7,7 @@ import { connectionService } from '../services/connectionService';
 import { datasetService } from '../services/datasetService';
 import type { Connection, Dataset } from '../types';
 
-type SourceType = 'file_upload' | 'postgresql' | 'mysql' | 'mongodb';
+type SourceType = 'file_upload' | 'postgresql' | 'mysql' | 'mongodb' | 'salesforce';
 
 interface SourceOption {
   id: SourceType;
@@ -40,6 +40,12 @@ const sourceOptions: SourceOption[] = [
     name: 'MongoDB',
     description: 'Connect to MongoDB database',
     icon: <Leaf size={28} color="#64748b" />
+  },
+  {
+    id: 'salesforce',
+    name: 'Salesforce',
+    description: 'Connect to Salesforce (OAuth)',
+    icon: <Server size={28} color="#64748b" />
   }
 ];
 
@@ -70,6 +76,7 @@ function buildUniqueName(baseName: string, takenNames: Set<string>) {
 
 export const CreateDatabasePage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -88,7 +95,7 @@ export const CreateDatabasePage: React.FC = () => {
     Array.from({ length: DEFAULT_MANUAL_ROWS }, () => Array.from({ length: DEFAULT_MANUAL_COLS }, () => ''))
   );
 
-  const [activeDbModal, setActiveDbModal] = useState<'mysql' | 'postgresql' | 'mongodb' | null>(null);
+  const [activeDbModal, setActiveDbModal] = useState<'mysql' | 'postgresql' | 'mongodb' | 'salesforce' | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [dbForm, setDbForm] = useState({
     host: 'localhost',
@@ -97,12 +104,22 @@ export const CreateDatabasePage: React.FC = () => {
     username: '',
     password: '',
   });
+  const [sfConnectionId, setSfConnectionId] = useState<string | null>(null);
   const [dbTest, setDbTest] = useState<{ status: 'idle' | 'testing' | 'success' | 'error'; message: string }>({
     status: 'idle',
     message: '',
   });
   const [dbItems, setDbItems] = useState<string[]>([]);
   const [dbSelected, setDbSelected] = useState<Set<string>>(new Set());
+  const [dbSearch, setDbSearch] = useState<string>('');
+
+  // Salesforce field search + selection
+  const [sfFieldObject, setSfFieldObject] = useState<string>('');
+  const [sfFieldSearch, setSfFieldSearch] = useState<string>('');
+  const [sfFieldItems, setSfFieldItems] = useState<Array<{ name: string; label?: string; type?: string }>>([]);
+  const [sfFieldStatus, setSfFieldStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [sfFieldError, setSfFieldError] = useState<string>('');
+  const [sfSelectedFieldsByObject, setSfSelectedFieldsByObject] = useState<Record<string, Set<string>>>({});
 
   const { data: connections = [] } = useQuery<Connection[]>({
     queryKey: ['connections'],
@@ -220,13 +237,26 @@ export const CreateDatabasePage: React.FC = () => {
     setSelectedSource(sourceId);
   };
 
-  const openDbModal = (type: 'mysql' | 'postgresql' | 'mongodb') => {
+  const openDbModal = (type: 'mysql' | 'postgresql' | 'mongodb' | 'salesforce') => {
     setSelectedSource(type);
     setActiveDbModal(type);
     setShowPassword(false);
     setDbTest({ status: 'idle', message: '' });
     setDbItems([]);
     setDbSelected(new Set());
+    setDbSearch('');
+
+    setSfFieldObject('');
+    setSfFieldSearch('');
+    setSfFieldItems([]);
+    setSfFieldStatus('idle');
+    setSfFieldError('');
+    setSfSelectedFieldsByObject({});
+
+    if (type === 'salesforce') {
+      setSfConnectionId(null);
+      return;
+    }
 
     if (type === 'postgresql') {
       setDbForm({ host: 'localhost', port: 5432, database: '', username: '', password: '' });
@@ -239,6 +269,50 @@ export const CreateDatabasePage: React.FC = () => {
 
   const testDbConnection = async () => {
     if (!activeDbModal) return;
+
+    if (activeDbModal === 'salesforce') {
+      setDbTest({ status: 'testing', message: 'Testing connection…' });
+      setDbItems([]);
+      setDbSelected(new Set());
+
+      try {
+        if (!sfConnectionId) {
+          setDbTest({ status: 'error', message: 'Please sign in with Salesforce first.' });
+          return;
+        }
+
+        const config = await connectionService.getConnectionConfig(sfConnectionId);
+        const creds: Record<string, any> = config?.credentials || {};
+        const result = await connectionService.testConnection('salesforce', creds);
+        if (result?.success) {
+          const items = result?.metadata?.objects || [];
+          const itemList: string[] = Array.isArray(items) ? items : [];
+          setDbTest({ status: 'success', message: result?.message || 'Connection successful.' });
+          setDbItems(itemList);
+          setDbSelected(new Set(itemList));
+          setDbSearch('');
+          setSfFieldObject(itemList[0] || '');
+          setSfFieldSearch('');
+          setSfFieldItems([]);
+          setSfFieldStatus('idle');
+          setSfFieldError('');
+
+          const existing = creds?.selected_fields && typeof creds.selected_fields === 'object' ? creds.selected_fields : {};
+          const nextMap: Record<string, Set<string>> = {};
+          for (const obj of itemList) {
+            const selected = Array.isArray((existing as any)[obj]) ? (existing as any)[obj] : null;
+            nextMap[obj] = new Set((selected && selected.length ? selected : ['Id']).map((x: any) => String(x)));
+          }
+          setSfSelectedFieldsByObject(nextMap);
+        } else {
+          setDbTest({ status: 'error', message: result?.message || 'Connection failed.' });
+        }
+      } catch (e: any) {
+        const msg = e?.response?.data?.detail || e?.message || 'Connection failed.';
+        setDbTest({ status: 'error', message: msg });
+      }
+      return;
+    }
 
     if (!dbForm.host || !dbForm.database) {
       setDbTest({ status: 'error', message: 'Host and database are required.' });
@@ -307,12 +381,114 @@ export const CreateDatabasePage: React.FC = () => {
     });
   };
 
+  const visibleDbItems = useMemo(() => {
+    const q = dbSearch.trim().toLowerCase();
+    if (!q) return dbItems;
+    return dbItems.filter((name) => name.toLowerCase().includes(q));
+  }, [dbItems, dbSearch]);
+
+  const selectedSalesforceObjects = useMemo(() => {
+    if (activeDbModal !== 'salesforce') return [] as string[];
+    if (!dbItems.length) return [] as string[];
+    // Keep ordering consistent with the full objects list.
+    return dbItems.filter((o) => dbSelected.has(o));
+  }, [activeDbModal, dbItems, dbSelected]);
+
+  const visibleAllSelected = useMemo(() => {
+    return visibleDbItems.length > 0 && visibleDbItems.every((name) => dbSelected.has(name));
+  }, [visibleDbItems, dbSelected]);
+
   const setSelectAll = (checked: boolean) => {
+    // Apply select all to the currently visible (filtered) items.
     if (!checked) {
-      setDbSelected(new Set());
+      setDbSelected((prev) => {
+        const next = new Set(prev);
+        for (const name of visibleDbItems) next.delete(name);
+        return next;
+      });
       return;
     }
-    setDbSelected(new Set(dbItems));
+    setDbSelected((prev) => {
+      const next = new Set(prev);
+      for (const name of visibleDbItems) next.add(name);
+      return next;
+    });
+  };
+
+  // Keep a reasonable (and valid) default object selected for Salesforce field search.
+  useEffect(() => {
+    if (activeDbModal !== 'salesforce') return;
+    if (dbTest.status !== 'success') return;
+    if (!selectedSalesforceObjects.length) {
+      if (sfFieldObject) setSfFieldObject('');
+      return;
+    }
+
+    // If nothing selected yet, or current value was unselected, pick the first selected object.
+    if (!sfFieldObject || !dbSelected.has(sfFieldObject)) {
+      setSfFieldObject(selectedSalesforceObjects[0]);
+    }
+  }, [activeDbModal, dbTest.status, selectedSalesforceObjects, sfFieldObject, dbSelected]);
+
+  // Fetch fields for the selected Salesforce object, to support field search.
+  useEffect(() => {
+    if (activeDbModal !== 'salesforce') return;
+    if (dbTest.status !== 'success') return;
+    if (!sfConnectionId) return;
+    if (!sfFieldObject) return;
+
+    let cancelled = false;
+    (async () => {
+      setSfFieldStatus('loading');
+      setSfFieldError('');
+      try {
+        const fields = await connectionService.getSalesforceFields(sfConnectionId, sfFieldObject);
+        if (cancelled) return;
+        setSfFieldItems(fields || []);
+        setSfFieldStatus('success');
+      } catch (e: any) {
+        if (cancelled) return;
+        const msg = e?.response?.data?.detail || e?.message || 'Failed to load Salesforce fields.';
+        setSfFieldItems([]);
+        setSfFieldStatus('error');
+        setSfFieldError(msg);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDbModal, dbTest.status, sfConnectionId, sfFieldObject]);
+
+  const visibleSfFields = useMemo(() => {
+    const q = sfFieldSearch.trim().toLowerCase();
+    if (!q) return sfFieldItems;
+    return (sfFieldItems || []).filter((f) => {
+      const name = (f?.name || '').toLowerCase();
+      const label = (f?.label || '').toLowerCase();
+      return name.includes(q) || label.includes(q);
+    });
+  }, [sfFieldItems, sfFieldSearch]);
+
+  // Ensure current object always has a selection set (defaults to Id)
+  useEffect(() => {
+    if (activeDbModal !== 'salesforce') return;
+    if (!sfFieldObject) return;
+    setSfSelectedFieldsByObject((prev) => {
+      if (prev[sfFieldObject]) return prev;
+      return { ...prev, [sfFieldObject]: new Set(['Id']) };
+    });
+  }, [activeDbModal, sfFieldObject]);
+
+  const toggleSfField = (fieldName: string) => {
+    if (!sfFieldObject) return;
+    if (fieldName === 'Id') return;
+    setSfSelectedFieldsByObject((prev) => {
+      const current = prev[sfFieldObject] ? new Set(prev[sfFieldObject]) : new Set<string>(['Id']);
+      if (current.has(fieldName)) current.delete(fieldName);
+      else current.add(fieldName);
+      return { ...prev, [sfFieldObject]: current };
+    });
   };
 
   const addDbConnection = async () => {
@@ -331,12 +507,44 @@ export const CreateDatabasePage: React.FC = () => {
         ? `PostgreSQL - ${dbForm.database}`
         : activeDbModal === 'mysql'
           ? `MySQL - ${dbForm.database}`
-          : `MongoDB - ${dbForm.database}`;
+          : activeDbModal === 'mongodb'
+            ? `MongoDB - ${dbForm.database}`
+            : `Salesforce`;
 
     try {
       const credentials: Record<string, any> = {};
 
-      if (activeDbModal === 'mongodb') {
+      if (activeDbModal === 'salesforce') {
+        if (!sfConnectionId) {
+          setDbTest({ status: 'error', message: 'Please sign in with Salesforce first.' });
+          return;
+        }
+
+        // Validate at least one field per selected object.
+        for (const obj of Array.from(dbSelected)) {
+          const setForObj = sfSelectedFieldsByObject[obj];
+          if (!setForObj || setForObj.size === 0) {
+            setDbTest({ status: 'error', message: `Select at least one field for ${obj}.` });
+            return;
+          }
+        }
+
+        const config = await connectionService.getConnectionConfig(sfConnectionId);
+        const existingCreds: Record<string, any> = config?.credentials || {};
+        credentials.selected_objects = Array.from(dbSelected);
+        const fieldsOut: Record<string, string[]> = {};
+        for (const obj of Array.from(dbSelected)) {
+          const setForObj = sfSelectedFieldsByObject[obj];
+          const arr = Array.from(setForObj || new Set<string>()).map(String);
+          fieldsOut[obj] = arr.length ? arr : ['Id'];
+        }
+        credentials.selected_fields = fieldsOut;
+        credentials.retention_days = existingCreds.retention_days ?? 90;
+        // Preserve OAuth tokens and other fields already stored
+        for (const [k, v] of Object.entries(existingCreds)) {
+          if (credentials[k] === undefined) credentials[k] = v;
+        }
+      } else if (activeDbModal === 'mongodb') {
         const userPart = encodeURIComponent(dbForm.username || '');
         const passPart = encodeURIComponent(dbForm.password || '');
         const auth = userPart ? `${userPart}:${passPart}@` : '';
@@ -359,12 +567,18 @@ export const CreateDatabasePage: React.FC = () => {
         credentials.selected_tables = Array.from(dbSelected);
       }
 
-      await connectionService.createConnection({
-        name: baseName,
-        source_type: activeDbModal,
-        description: `Created from Create Database`,
-        credentials,
-      } as any);
+      if (activeDbModal === 'salesforce') {
+        await connectionService.updateConnection(sfConnectionId!, {
+          credentials,
+        } as any);
+      } else {
+        await connectionService.createConnection({
+          name: baseName,
+          source_type: activeDbModal,
+          description: `Created from Create Database`,
+          credentials,
+        } as any);
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['connections'] });
       setActiveDbModal(null);
@@ -374,6 +588,53 @@ export const CreateDatabasePage: React.FC = () => {
       setDbTest({ status: 'error', message: msg });
     }
   };
+
+  const startSalesforceOAuth = async () => {
+    setDbTest({ status: 'testing', message: 'Redirecting to Salesforce…' });
+    try {
+      const resp = await connectionService.startSalesforceOAuth({ name: 'Salesforce' });
+      if (!resp?.authorize_url) throw new Error('Missing authorize_url');
+      window.location.href = resp.authorize_url;
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Failed to start Salesforce OAuth.';
+      setDbTest({ status: 'error', message: msg });
+    }
+  };
+
+  useEffect(() => {
+    // After Salesforce OAuth callback, backend redirects here with the new connection id.
+    const params = new URLSearchParams(location.search);
+    const oauthErr = params.get('salesforce_oauth_error');
+    if (oauthErr) {
+      setSelectedSource('salesforce');
+      setActiveDbModal('salesforce');
+      setSfConnectionId(null);
+      setDbTest({ status: 'error', message: oauthErr });
+      return;
+    }
+    const id = params.get('salesforce_connection_id');
+    if (!id) return;
+
+    setSelectedSource('salesforce');
+    setActiveDbModal('salesforce');
+    setSfConnectionId(id);
+
+    // Avoid auto-testing/loading objects here to reduce Salesforce API calls (can trigger REQUEST_LIMIT_EXCEEDED).
+    // User can click "Test connection" when ready.
+    setDbItems([]);
+    setDbSelected(new Set());
+    setDbSearch('');
+    setSfFieldObject('');
+    setSfFieldSearch('');
+    setSfFieldItems([]);
+    setSfFieldStatus('idle');
+    setSfFieldError('');
+    setSfSelectedFieldsByObject({});
+    setDbTest({ status: 'idle', message: 'Salesforce connected. Click Test Connection to load objects.' });
+
+    // Remove the query param so refresh doesn't re-trigger this block.
+    navigate(location.pathname, { replace: true });
+  }, [location.search]);
 
   const openFilePicker = () => {
     // reset input so selecting the same file twice triggers onChange
@@ -693,6 +954,10 @@ export const CreateDatabasePage: React.FC = () => {
                   return;
                 }
                 if (source.id === 'postgresql' || source.id === 'mysql' || source.id === 'mongodb') {
+                  openDbModal(source.id);
+                  return;
+                }
+                if (source.id === 'salesforce') {
                   openDbModal(source.id);
                   return;
                 }
@@ -1231,12 +1496,39 @@ export const CreateDatabasePage: React.FC = () => {
               borderBottom: '1px solid #e2e8f0'
             }}>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
-                Configure {activeDbModal === 'postgresql' ? 'PostgreSQL' : activeDbModal === 'mysql' ? 'MySQL' : 'MongoDB'}
+                Configure {activeDbModal === 'postgresql' ? 'PostgreSQL' : activeDbModal === 'mysql' ? 'MySQL' : activeDbModal === 'salesforce' ? 'Salesforce' : 'MongoDB'}
               </div>
               <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Enter your connection details</div>
             </div>
 
             <div style={{ padding: '20px' }}>
+              {activeDbModal === 'salesforce' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '14px' }}>
+                  <button
+                    onClick={startSalesforceOAuth}
+                    disabled={dbTest.status === 'testing'}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #e2e8f0',
+                      backgroundColor: '#f8fafc',
+                      fontSize: '14px',
+                      fontWeight: 900,
+                      cursor: dbTest.status === 'testing' ? 'not-allowed' : 'pointer',
+                      color: '#0f172a'
+                    }}
+                  >
+                    Sign in with Salesforce
+                  </button>
+
+                  {sfConnectionId && (
+                    <div style={{ fontSize: '13px', color: '#64748b' }}>
+                      Connected. Use “Test Connection” to load objects.
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>Host</div>
@@ -1340,6 +1632,7 @@ export const CreateDatabasePage: React.FC = () => {
                   </div>
                 </div>
               </div>
+              )}
 
               <button
                 onClick={testDbConnection}
@@ -1375,6 +1668,22 @@ export const CreateDatabasePage: React.FC = () => {
 
               {dbTest.status === 'success' && (
                 <div style={{ marginTop: '18px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <input
+                      value={dbSearch}
+                      onChange={(e) => setDbSearch(e.target.value)}
+                      placeholder={activeDbModal === 'salesforce' ? 'Search objects…' : activeDbModal === 'mongodb' ? 'Search collections…' : 'Search tables…'}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        backgroundColor: '#f8fafc',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1382,12 +1691,12 @@ export const CreateDatabasePage: React.FC = () => {
                     marginBottom: '10px'
                   }}>
                     <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                      {activeDbModal === 'mongodb' ? 'Collections' : 'Tables'}
+                        {activeDbModal === 'mongodb' ? 'Collections' : activeDbModal === 'salesforce' ? 'Objects' : 'Tables'}
                     </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#0f172a' }}>
                       <input
                         type="checkbox"
-                        checked={dbItems.length > 0 && dbSelected.size === dbItems.length}
+                        checked={visibleAllSelected}
                         onChange={(e) => setSelectAll(e.target.checked)}
                       />
                       Select all
@@ -1403,10 +1712,10 @@ export const CreateDatabasePage: React.FC = () => {
                   }}>
                     {dbItems.length === 0 ? (
                       <div style={{ padding: '12px 14px', fontSize: '13px', color: '#64748b' }}>
-                        No {activeDbModal === 'mongodb' ? 'collections' : 'tables'} found.
+                        No {activeDbModal === 'mongodb' ? 'collections' : activeDbModal === 'salesforce' ? 'objects' : 'tables'} found.
                       </div>
                     ) : (
-                      dbItems.map((name) => (
+                      visibleDbItems.map((name) => (
                         <label
                           key={name}
                           style={{
@@ -1429,6 +1738,105 @@ export const CreateDatabasePage: React.FC = () => {
                       ))
                     )}
                   </div>
+
+                  {activeDbModal === 'salesforce' && sfConnectionId && (
+                    <div style={{ marginTop: '14px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                        Search fields
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <select
+                          value={sfFieldObject}
+                          onChange={(e) => {
+                            setSfFieldObject(e.target.value);
+                            setSfFieldSearch('');
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0',
+                            backgroundColor: '#f8fafc',
+                            fontSize: '14px'
+                          }}
+                        >
+                          {selectedSalesforceObjects.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={sfFieldSearch}
+                          onChange={(e) => setSfFieldSearch(e.target.value)}
+                          placeholder="Search fields…"
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0',
+                            backgroundColor: '#f8fafc',
+                            fontSize: '14px'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{
+                        marginTop: '10px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        maxHeight: '180px',
+                        overflow: 'auto',
+                        backgroundColor: 'white'
+                      }}>
+                        {sfFieldStatus === 'loading' ? (
+                          <div style={{ padding: '12px 14px', fontSize: '13px', color: '#64748b' }}>
+                            Loading fields…
+                          </div>
+                        ) : sfFieldStatus === 'error' ? (
+                          <div style={{ padding: '12px 14px', fontSize: '13px', color: '#dc2626', fontWeight: 700 }}>
+                            {sfFieldError || 'Failed to load fields.'}
+                          </div>
+                        ) : visibleSfFields.length === 0 ? (
+                          <div style={{ padding: '12px 14px', fontSize: '13px', color: '#64748b' }}>
+                            No matching fields.
+                          </div>
+                        ) : (
+                          visibleSfFields.map((f) => (
+                            <label
+                              key={f.name}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '10px',
+                                padding: '10px 14px',
+                                borderBottom: '1px solid #f1f5f9',
+                                fontSize: '13px',
+                                color: '#0f172a'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={
+                                  f.name === 'Id'
+                                    ? true
+                                    : (sfSelectedFieldsByObject[sfFieldObject] || new Set<string>()).has(f.name)
+                                }
+                                disabled={f.name === 'Id'}
+                                onChange={() => toggleSfField(f.name)}
+                                style={{ marginTop: '2px' }}
+                              />
+                              <div style={{ flex: 1 }}>
+                                <span style={{ fontWeight: 900 }}>{f.name}</span>
+                                {f.type ? <span style={{ color: '#64748b' }}> — {f.type}</span> : null}
+                                {f.label ? <div style={{ color: '#64748b', marginTop: '2px' }}>{f.label}</div> : null}
+                              </div>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div style={{
                     display: 'flex',
