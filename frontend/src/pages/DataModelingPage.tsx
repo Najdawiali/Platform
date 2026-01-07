@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { datasetService } from '../services/datasetService';
 import { connectionService } from '../services/connectionService';
 import type { Connection, Dataset } from '../types';
+import { TransformationConfigModal } from '../components/TransformationConfigModal';
 
 // ============================================================================
 // TYPES
@@ -19,7 +20,7 @@ interface ColumnInfo {
 
 interface TableNode {
   id: string;
-  type: 'dataset' | 'database_table' | 'derived';
+  type: 'dataset' | 'database_table' | 'derived' | 'transformation';
   name: string;
   source?: string;
   columns: ColumnInfo[];
@@ -31,6 +32,10 @@ interface TableNode {
   connectionId?: string;
   tableName?: string;
   scrollTop?: number;
+  transformationType?: string;
+  transformationCategory?: string;
+  transformationConfig?: any;
+  isConfigured?: boolean;
   joinMetadata?: {
     joinType: string;
     leftTable: string;
@@ -56,9 +61,11 @@ interface JoinRelationship {
 interface DragSource {
   id: string;
   name: string;
-  type: 'dataset' | 'database_table';
+  type: 'dataset' | 'database_table' | 'transformation';
   connectionId?: string;
   sourceName?: string;
+  category?: string;
+  operation?: string;
 }
 
 interface DrawingState {
@@ -135,6 +142,9 @@ export const DataModelingPage: React.FC = () => {
   const [transformationsExpanded, setTransformationsExpanded] = useState<boolean>(false);
   const [expandedTransformCategories, setExpandedTransformCategories] = useState<Set<string>>(new Set());
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [configModalOpen, setConfigModalOpen] = useState<boolean>(false);
+  const [configTargetNode, setConfigTargetNode] = useState<TableNode | null>(null);
+  const [configSourceNode, setConfigSourceNode] = useState<TableNode | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -242,11 +252,11 @@ export const DataModelingPage: React.FC = () => {
     setTables(newTables);
   }, [location.state]);
 
-  // Auto-fetch columns for database tables
+  // Auto-fetch columns for database tables and datasets
   useEffect(() => {
     tables.forEach((table) => {
       if (table.type === 'database_table' && table.columns.length === 0) {
-        // Auto-expand and load
+        // Auto-expand and load database table columns
         (async () => {
           try {
             if (!table.connectionId || !table.tableName) return;
@@ -273,6 +283,71 @@ export const DataModelingPage: React.FC = () => {
             }
           } catch (err) {
             console.error(`Failed to fetch columns for ${table.name}:`, err);
+          }
+        })();
+      } else if (table.type === 'dataset' && table.columns.length === 0) {
+        // Fetch dataset preview to get columns (same approach as SQL Editor)
+        (async () => {
+          try {
+            // Extract dataset ID from table.id (format: "ds-{id}")
+            const datasetId = table.id.replace('ds-', '');
+            console.log('Fetching columns for dataset:', { tableId: table.id, datasetId, tableName: table.name });
+            
+            const preview = await datasetService.getDatasetPreview(datasetId, 20);
+            console.log('Preview response:', preview);
+            
+            let cols: ColumnInfo[] = [];
+            
+            if (preview?.columns && Array.isArray(preview.columns)) {
+              cols = preview.columns.map((colName: string) => ({
+                name: colName,
+                type: 'string'
+              }));
+              console.log('✓ Got columns from preview.columns:', cols.length);
+            } else if (preview?.rows && Array.isArray(preview.rows) && preview.rows.length > 0) {
+              // Extract from first row if columns array not provided
+              const firstRow = preview.rows[0];
+              cols = Object.keys(firstRow).map(key => ({
+                name: key,
+                type: typeof firstRow[key]
+              }));
+              console.log('✓ Got columns from preview.rows:', cols.length);
+            }
+            
+            if (cols.length > 0) {
+              setTables((prev) =>
+                prev.map((t) =>
+                  t.id === table.id
+                    ? { ...t, columns: cols }
+                    : t
+                )
+              );
+              console.log('✓ Updated table with', cols.length, 'columns');
+            } else {
+              console.warn('✗ No columns found in preview for:', table.name);
+            }
+          } catch (err) {
+            console.error(`Failed to fetch columns for dataset ${table.name}:`, err);
+            // Try fallback to getDatasetById
+            try {
+              const datasetId = table.id.replace('ds-', '');
+              console.log('Trying fallback getDatasetById for:', datasetId);
+              const fullDataset = await datasetService.getDatasetById(datasetId);
+              console.log('Full dataset response:', fullDataset);
+              const cols = extractColumnsFromDataset(fullDataset);
+              if (cols.length > 0) {
+                setTables((prev) =>
+                  prev.map((t) =>
+                    t.id === table.id
+                      ? { ...t, columns: cols }
+                      : t
+                  )
+                );
+                console.log('✓ Fallback succeeded with', cols.length, 'columns');
+              }
+            } catch (fallbackErr) {
+              console.error(`Fallback also failed for dataset ${table.name}:`, fallbackErr);
+            }
           }
         })();
       }
@@ -343,15 +418,19 @@ export const DataModelingPage: React.FC = () => {
       const y = (e.clientY - rect.top - viewport.y) / viewport.scale;
 
       if (data.type === 'dataset') {
-        const ds = availableDatasets.find((d) => d.id === data.id);
-        if (!ds) return;
+        const ds = data.dataset || uploadedFileDatasets.find((d) => d.id === data.id);
+        if (!ds) {
+          console.error('Dataset not found:', data.id);
+          return;
+        }
 
-        const cols = extractColumnsFromDataset(ds);
+        const displayName = ds.original_filename || ds.name;
+        console.log('Creating dataset table:', { id: ds.id, name: displayName });
         const newTable: TableNode = {
-          id: `ds-${ds.id}-${Date.now()}`,
+          id: `ds-${ds.id}`,
           type: 'dataset',
-          name: sanitizeName(ds.name),
-          columns: cols,
+          name: displayName,
+          columns: [], // Start with empty, let useEffect fetch columns
           isExpanded: false,
           x,
           y,
@@ -368,6 +447,21 @@ export const DataModelingPage: React.FC = () => {
           tableName: sanitizeName(data.name),
           columns: [],
           isExpanded: false,
+          x,
+          y,
+        };
+        setTables((prev) => [...prev, newTable]);
+      } else if (data.type === 'transformation') {
+        // Create transformation node
+        const newTable: TableNode = {
+          id: `transform-${Date.now()}-${Math.random()}`,
+          type: 'transformation',
+          name: data.operation || 'Transformation',
+          transformationType: data.operation,
+          transformationCategory: data.category,
+          columns: [],
+          isExpanded: false,
+          isConfigured: false,
           x,
           y,
         };
@@ -548,13 +642,40 @@ export const DataModelingPage: React.FC = () => {
   ) => {
     e.stopPropagation();
     if (drawing && drawing.fromTableId !== tableId) {
-      setShowJoinModal(true);
-      setJoinModalData({
-        fromTableId: drawing.fromTableId,
-        fromColumnName: drawing.fromColumnName,
-        toTableId: tableId,
-        toColumnName: columnName,
-      });
+      // Check if target is a transformation node
+      const targetTable = tables.find(t => t.id === tableId);
+      const sourceTable = tables.find(t => t.id === drawing.fromTableId);
+      
+      if (targetTable?.type === 'transformation') {
+        // Open transformation configuration modal
+        if (!targetTable.isConfigured) {
+          setConfigTargetNode(targetTable);
+          setConfigSourceNode(sourceTable || null);
+          setConfigModalOpen(true);
+        } else {
+          // Already configured, just create relationship
+          setRelationships((prev) => [
+            ...prev,
+            {
+              id: `rel-${Date.now()}-${Math.random()}`,
+              fromTableId: drawing.fromTableId,
+              fromColumnName: drawing.fromColumnName,
+              toTableId: tableId,
+              toColumnName: columnName,
+              joinType: 'inner',
+            },
+          ]);
+        }
+      } else {
+        // Regular join modal
+        setShowJoinModal(true);
+        setJoinModalData({
+          fromTableId: drawing.fromTableId,
+          fromColumnName: drawing.fromColumnName,
+          toTableId: tableId,
+          toColumnName: columnName,
+        });
+      }
     }
     setDrawing(null);
   };
@@ -786,15 +907,9 @@ export const DataModelingPage: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* VISUAL DEBUG BANNER */}
-      <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 text-white text-center py-2 font-bold text-sm z-[9999] shadow-lg">
-        🎨 NEW STYLES ACTIVE - Last Updated: {new Date().toLocaleTimeString()} 🎨
-      </div>
-
       {/* SIDEBAR */}
       <div className="w-80 border-r-2 border-slate-300 flex flex-col overflow-hidden shadow-xl" style={{
-        background: 'linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%)',
-        marginTop: '48px'
+        background: 'linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%)'
       }}>
         <div className="p-6 border-b-2 border-slate-300 shadow-md" style={{
           background: 'linear-gradient(135deg, #6366f1 0%, #3b82f6 100%)'
@@ -920,12 +1035,14 @@ export const DataModelingPage: React.FC = () => {
                       <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, padding: '6px 8px' }}>
                         FILES
                       </div>
-                      {visibleUploadedFiles.map((ds: any) => (
+                      {visibleUploadedFiles.map((ds: any) => {
+                        const displayName = ds.original_filename || ds.name;
+                        return (
                         <div
                           key={ds.id}
                           draggable
                           onDragStart={(e) =>
-                            handleDragStart(e, { id: ds.id, name: ds.name, type: 'dataset' })
+                            handleDragStart(e, { id: ds.id, name: displayName, type: 'dataset', dataset: ds })
                           }
                           style={{
                             padding: '8px 12px',
@@ -935,14 +1052,14 @@ export const DataModelingPage: React.FC = () => {
                             marginBottom: '4px'
                           }}
                           className="hover:bg-slate-50"
-                          title={ds.name}
+                          title={displayName}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '12px' }}>📄</span>
-                            <span>{ds.name}</span>
+                            <span>{displayName}</span>
                           </div>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   )}
                 </div>
@@ -975,142 +1092,68 @@ export const DataModelingPage: React.FC = () => {
                   <div style={{ marginTop: '6px', marginLeft: '8px' }}>
                     {[
                       { 
-                        id: 'join-combine', 
-                        label: 'Join & Combine Operations', 
-                        icon: '🔗',
-                        operations: [
-                          'Inner Join',
-                          'Left Join',
-                          'Right Join',
-                          'Full Outer Join',
-                          'Union'
-                        ]
-                      },
-                      { 
                         id: 'filters', 
-                        label: 'Filters & Row Selection', 
-                        icon: '🔍',
-                        operations: [
-                          'Filter by condition (equals, contains, >, <, >=, <=)',
-                          'Multiple conditions (AND/OR logic)',
-                          'Remove nulls',
-                          'Remove duplicates',
-                          'Keep top/bottom N rows'
-                        ]
+                        label: 'Filter', 
+                        icon: '🔍'
                       },
                       { 
-                        id: 'columns', 
-                        label: 'Select & Rename Columns', 
-                        icon: '📋',
-                        operations: [
-                          'Reorder columns',
-                          'Select specific columns'
-                        ]
+                        id: 'join-combine', 
+                        label: 'Join & Combine', 
+                        icon: '🔗'
                       },
                       { 
                         id: 'aggregate', 
-                        label: 'Group & Aggregate', 
-                        icon: '📊',
-                        operations: [
-                          'Group by columns',
-                          'Sum',
-                          'Count',
-                          'Average',
-                          'Min/Max',
-                          'Count distinct'
-                        ]
+                        label: 'Aggregate', 
+                        icon: '📊'
+                      },
+                      { 
+                        id: 'columns', 
+                        label: 'Select Columns', 
+                        icon: '📋'
                       },
                       { 
                         id: 'date-time', 
-                        label: 'Date & Time Operations', 
-                        icon: '📅',
-                        operations: [
-                          'Extract year/month/day',
-                          'Date difference'
-                        ]
+                        label: 'Date & Time', 
+                        icon: '📅'
                       },
                       { 
                         id: 'text', 
-                        label: 'Text & String Operations', 
-                        icon: '📝',
-                        operations: [
-                          'Split columns',
-                          'Trim whitespace',
-                          'Upper/lower case'
-                        ]
+                        label: 'Text Operations', 
+                        icon: '📝'
                       },
                       { 
                         id: 'pivot', 
-                        label: 'Pivot & Unpivot', 
-                        icon: '🔄',
-                        operations: [
-                          'Pivot (rows to columns)',
-                          'Unpivot (columns to rows)'
-                        ]
+                        label: 'Pivot', 
+                        icon: '🔄'
                       }
                     ].map((category) => (
-                      <div key={category.id} style={{ marginBottom: '4px' }}>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => {
-                            const newSet = new Set(expandedTransformCategories);
-                            if (newSet.has(category.id)) {
-                              newSet.delete(category.id);
-                            } else {
-                              newSet.add(category.id);
-                            }
-                            setExpandedTransformCategories(newSet);
-                          }}
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '11px',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}
-                          className="hover:bg-slate-50"
-                        >
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-                            {expandedTransformCategories.has(category.id) ? '▼' : '▶'}
-                          </span>
-                          <span style={{ fontSize: '12px' }}>{category.icon}</span>
-                          <span>{category.label}</span>
-                        </div>
-                        {expandedTransformCategories.has(category.id) && (
-                          <div style={{ marginLeft: '32px', paddingLeft: '8px', borderLeft: '2px solid #e2e8f0' }}>
-                            {category.operations.map((operation, idx) => (
-                              <div
-                                key={idx}
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData('application/json', JSON.stringify({
-                                    type: 'transformation',
-                                    category: category.id,
-                                    operation: operation
-                                  }));
-                                }}
-                                style={{
-                                  padding: '6px 12px',
-                                  fontSize: '11px',
-                                  borderRadius: '6px',
-                                  cursor: 'grab',
-                                  marginBottom: '2px',
-                                  color: '#475569'
-                                }}
-                                className="hover:bg-slate-100"
-                                title={`Drag to canvas: ${operation}`}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontSize: '8px', color: '#94a3b8' }}>●</span>
-                                  <span>{operation}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      <div
+                        key={category.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('application/json', JSON.stringify({
+                            type: 'transformation',
+                            category: category.id,
+                            operation: category.label
+                          }));
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: '11px',
+                          borderRadius: '8px',
+                          cursor: 'grab',
+                          marginBottom: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          border: '1px solid #e2e8f0',
+                          backgroundColor: '#ffffff'
+                        }}
+                        className="hover:bg-slate-50 hover:shadow-md transition-all"
+                        title={`Drag to canvas: ${category.label}`}
+                      >
+                        <span style={{ fontSize: '12px' }}>{category.icon}</span>
+                        <span>{category.label}</span>
                       </div>
                     ))}
                   </div>
@@ -1239,16 +1282,61 @@ export const DataModelingPage: React.FC = () => {
               style={{
                 left: `${table.x}px`,
                 top: `${table.y}px`,
-                width: '320px',
-                backgroundColor: '#ffffff',
+                width: table.type === 'transformation' ? '240px' : 'auto',
+                minWidth: table.type === 'transformation' ? '240px' : '320px',
+                maxWidth: table.type === 'transformation' ? '240px' : '480px',
+                backgroundColor: table.type === 'transformation' ? '#3b82f6' : '#ffffff',
                 zIndex: selectedTableId === table.id ? 50 : 10,
                 transform: selectedTableId === table.id ? 'scale(1.02)' : 'scale(1)',
               }}
               onMouseDown={(e) => handleTableMouseDown(e, table.id)}
             >
+              {/* Transformation Node Rendering */}
+              {table.type === 'transformation' ? (
+                <div className="p-6 text-center relative">
+                  {/* Delete Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTables((prev) => prev.filter((t) => t.id !== table.id));
+                      setRelationships((prev) => prev.filter((r) => r.fromTableId !== table.id && r.toTableId !== table.id));
+                    }}
+                    className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center bg-white/90 hover:bg-red-500 text-slate-600 hover:text-white rounded-full shadow-md transition-all font-bold text-sm"
+                    title="Remove transformation"
+                  >
+                    ×
+                  </button>
+                  
+                  <div className="text-white text-4xl mb-3">⚙️</div>
+                  <h3 className="font-bold text-white text-base mb-2">{table.name}</h3>
+                  {table.isConfigured && table.transformationConfig?.operation && (
+                    <p className="text-xs text-blue-100 mb-3">
+                      {table.transformationConfig.operation}
+                    </p>
+                  )}
+                  {!table.isConfigured && (
+                    <p className="text-xs text-blue-200 italic">Not configured</p>
+                  )}
+                  
+                  {/* Input Connection Point */}
+                  <div
+                    className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-blue-600 cursor-crosshair hover:scale-125 transition-all shadow-lg"
+                    onMouseUp={(e) => handleColumnMouseUp(e, table.id, 'input')}
+                    title="Connect input here"
+                  />
+                  
+                  {/* Output Connection Point */}
+                  <div
+                    className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-blue-600 cursor-crosshair hover:scale-125 transition-all shadow-lg"
+                    onMouseDown={(e) => handleColumnMouseDown(e, table.id, 'output')}
+                    title="Drag to connect output"
+                  />
+                </div>
+              ) : (
+                <>
               {/* Header */}
               <div
-                className={`px-4 py-3 cursor-move border-b border-slate-200 shadow-sm ${
+                className={`px-4 py-3 cursor-move border-b border-slate-200 shadow-sm relative ${
                   table.type === 'derived'
                     ? 'bg-yellow-400'
                     : table.type === 'database_table'
@@ -1257,18 +1345,36 @@ export const DataModelingPage: React.FC = () => {
                 }`}
                 onDoubleClick={() => toggleTableExpand(table.id)}
               >
+                {/* Delete Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTables((prev) => prev.filter((t) => t.id !== table.id));
+                    setRelationships((prev) => prev.filter((r) => r.fromTableId !== table.id && r.toTableId !== table.id));
+                  }}
+                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-white/90 hover:bg-red-500 text-slate-600 hover:text-white rounded-full shadow-md transition-all font-bold text-xs z-10"
+                  title="Remove table"
+                >
+                  ×
+                </button>
+                
                 <div className="flex items-center justify-between">
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0 pr-2">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-bold text-slate-900 text-sm tracking-tight">{table.name}</h3>
+                      <h3 
+                        className="font-bold text-slate-900 text-sm tracking-tight truncate" 
+                        title={table.name}
+                      >
+                        {table.name}
+                      </h3>
                     </div>
                     {table.source && (
-                      <p className="text-xs text-slate-800/70 flex items-center gap-1 font-medium">
+                      <p className="text-xs text-slate-800/70 flex items-center gap-1 font-medium truncate" title={table.source}>
                         {table.source}
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 pr-6">
                     {table.type === 'derived' && (
                       <>
                         <button
@@ -1371,6 +1477,8 @@ export const DataModelingPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+              )}
+              </>
               )}
             </div>
           ))}
@@ -1498,6 +1606,50 @@ export const DataModelingPage: React.FC = () => {
           </div>
         </div>
       ) : null}
+
+      {/* Transformation Configuration Modal */}
+      <TransformationConfigModal
+        isOpen={configModalOpen}
+        transformationType={configTargetNode?.transformationType || ''}
+        transformationCategory={configTargetNode?.transformationCategory || ''}
+        sourceNode={configSourceNode}
+        onSave={(config) => {
+          if (!configTargetNode) return;
+          
+          // Update the transformation node with configuration
+          setTables((prev) =>
+            prev.map((t) =>
+              t.id === configTargetNode.id
+                ? { ...t, transformationConfig: config, isConfigured: true }
+                : t
+            )
+          );
+          
+          // Create relationship if drawing was active
+          if (drawing && configSourceNode) {
+            setRelationships((prev) => [
+              ...prev,
+              {
+                id: `rel-${Date.now()}-${Math.random()}`,
+                fromTableId: configSourceNode.id,
+                fromColumnName: drawing.fromColumnName,
+                toTableId: configTargetNode.id,
+                toColumnName: 'output',
+                joinType: 'inner',
+              },
+            ]);
+          }
+          
+          setConfigModalOpen(false);
+          setConfigTargetNode(null);
+          setConfigSourceNode(null);
+        }}
+        onCancel={() => {
+          setConfigModalOpen(false);
+          setConfigTargetNode(null);
+          setConfigSourceNode(null);
+        }}
+      />
     </div>
   );
 };
