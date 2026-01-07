@@ -146,6 +146,9 @@ export const DataModelingPage: React.FC = () => {
   const [configTargetNode, setConfigTargetNode] = useState<TableNode | null>(null);
   const [configSourceNode, setConfigSourceNode] = useState<TableNode | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState<boolean>(false);
+  const [previewData, setPreviewData] = useState<{ rows: any[]; columns: string[]; title: string } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [drawing, setDrawing] = useState<DrawingState | null>(null);
@@ -395,6 +398,44 @@ export const DataModelingPage: React.FC = () => {
     },
     [expandedConns, connectionTables]
   );
+
+  // ========== Preview Handler ==========
+  
+  const handlePreviewData = async (type: 'dataset' | 'database', id: string, name: string, connectionId?: string) => {
+    setIsLoadingPreview(true);
+    setPreviewModalOpen(true);
+    setPreviewData(null);
+    
+    try {
+      if (type === 'dataset') {
+        const preview = await datasetService.getDatasetPreview(id, 10);
+        const columns = preview?.columns || (preview?.rows?.[0] ? Object.keys(preview.rows[0]) : []);
+        setPreviewData({
+          title: name,
+          columns,
+          rows: preview?.rows || []
+        });
+      } else if (type === 'database' && connectionId) {
+        const result = await connectionService.queryData(connectionId, name, 10, 0);
+        const columns = result?.columns?.map((c: any) => c.name || c) || 
+                       (result?.data?.[0] ? Object.keys(result.data[0]) : []);
+        setPreviewData({
+          title: name,
+          columns,
+          rows: result?.data || []
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch preview data:', err);
+      setPreviewData({
+        title: name,
+        columns: [],
+        rows: []
+      });
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
 
   // ========== Canvas Handlers ==========
 
@@ -975,30 +1016,45 @@ export const DataModelingPage: React.FC = () => {
                         connectionTables[conn.id].map((tableName) => (
                           <div
                             key={tableName}
-                            draggable
-                            onDragStart={(e) =>
-                              handleDragStart(e, {
-                                id: tableName,
-                                name: tableName,
-                                type: 'database_table',
-                                connectionId: conn.id,
-                                sourceName: conn.name,
-                              })
-                            }
-                            style={{
-                              padding: '8px 12px',
-                              fontSize: '11px',
-                              borderRadius: '8px',
-                              cursor: 'grab',
-                              marginBottom: '4px'
-                            }}
-                            className="hover:bg-slate-50"
-                            title={tableName}
+                            className="group relative"
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '12px' }}>📋</span>
-                              <span>{tableName}</span>
+                            <div
+                              draggable
+                              onDragStart={(e) =>
+                                handleDragStart(e, {
+                                  id: tableName,
+                                  name: tableName,
+                                  type: 'database_table',
+                                  connectionId: conn.id,
+                                  sourceName: conn.name,
+                                })
+                              }
+                              style={{
+                                padding: '8px 12px',
+                                fontSize: '11px',
+                                borderRadius: '8px',
+                                cursor: 'grab',
+                                marginBottom: '4px',
+                                paddingRight: '32px'
+                              }}
+                              className="hover:bg-slate-50"
+                              title={tableName}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '12px' }}>📋</span>
+                                <span>{tableName}</span>
+                              </div>
                             </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePreviewData('database', tableName, tableName, conn.id);
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold"
+                              title="Preview data"
+                            >
+                              ...
+                            </button>
                           </div>
                         ))
                       ) : (
@@ -1040,24 +1096,39 @@ export const DataModelingPage: React.FC = () => {
                         return (
                         <div
                           key={ds.id}
-                          draggable
-                          onDragStart={(e) =>
-                            handleDragStart(e, { id: ds.id, name: displayName, type: 'dataset', dataset: ds })
-                          }
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '11px',
-                            borderRadius: '8px',
-                            cursor: 'grab',
-                            marginBottom: '4px'
-                          }}
-                          className="hover:bg-slate-50"
-                          title={displayName}
+                          className="group relative"
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '12px' }}>📄</span>
-                            <span>{displayName}</span>
+                          <div
+                            draggable
+                            onDragStart={(e) =>
+                              handleDragStart(e, { id: ds.id, name: displayName, type: 'dataset', dataset: ds })
+                            }
+                            style={{
+                              padding: '8px 12px',
+                              fontSize: '11px',
+                              borderRadius: '8px',
+                              cursor: 'grab',
+                              marginBottom: '4px',
+                              paddingRight: '32px'
+                            }}
+                            className="hover:bg-slate-50"
+                            title={displayName}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '12px' }}>📄</span>
+                              <span>{displayName}</span>
+                            </div>
                           </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePreviewData('dataset', String(ds.id), displayName);
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold"
+                            title="Preview data"
+                          >
+                            ...
+                          </button>
                         </div>
                       );})}
                     </div>
@@ -1650,6 +1721,84 @@ export const DataModelingPage: React.FC = () => {
           setConfigSourceNode(null);
         }}
       />
+
+      {/* Data Preview Modal */}
+      {previewModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-[90%] max-w-6xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <h2 className="text-2xl font-bold text-slate-800">
+                Preview: {previewData?.title || 'Loading...'}
+              </h2>
+              <button
+                onClick={() => setPreviewModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-6">
+              {isLoadingPreview ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-slate-600">Loading preview...</div>
+                </div>
+              ) : previewData && previewData.rows.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        {previewData.columns.map((col, idx) => (
+                          <th
+                            key={idx}
+                            className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider border-b-2 border-slate-300"
+                          >
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewData.rows.map((row, rowIdx) => (
+                        <tr
+                          key={rowIdx}
+                          className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}
+                        >
+                          {previewData.columns.map((col, colIdx) => (
+                            <td
+                              key={colIdx}
+                              className="px-4 py-3 text-sm text-slate-800 border-b border-slate-200 max-w-xs truncate"
+                              title={String(row[col] ?? '')}
+                            >
+                              {row[col] !== null && row[col] !== undefined ? String(row[col]) : <span className="text-slate-400 italic">null</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 text-sm text-slate-600 text-center">
+                    Showing first {previewData.rows.length} rows
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-slate-600">No data available</div>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end gap-3 p-6 border-t border-slate-200">
+              <button
+                onClick={() => setPreviewModalOpen(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-700 border-2 border-slate-300 rounded-lg hover:bg-slate-50 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
