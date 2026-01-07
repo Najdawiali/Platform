@@ -132,6 +132,8 @@ export const DataModelingPage: React.FC = () => {
   const [sidebarTab, setSidebarTab] = useState<'data_sources' | 'saved_workflows'>('data_sources');
   const [expandedConns, setExpandedConns] = useState<Set<string>>(new Set());
   const [uploadedFilesExpanded, setUploadedFilesExpanded] = useState<boolean>(false);
+  const [transformationsExpanded, setTransformationsExpanded] = useState<boolean>(false);
+  const [expandedTransformCategories, setExpandedTransformCategories] = useState<Set<string>>(new Set());
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -945,6 +947,175 @@ export const DataModelingPage: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {/* Separator Line */}
+              {(visibleConnections.length > 0 || visibleUploadedFiles.length > 0) && (
+                <div style={{ borderTop: '2px solid #cbd5e1', marginTop: '12px', marginBottom: '12px' }}></div>
+              )}
+
+              {/* Transformations Section */}
+              <div style={{ marginBottom: '8px' }}>
+                <button
+                  onClick={() => setTransformationsExpanded(!transformationsExpanded)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-slate-800 hover:shadow-md transition-all font-semibold"
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    background: '#ffffff'
+                  }}
+                >
+                  <span className="flex items-center gap-2 truncate" style={{ minWidth: 0 }}>
+                    <span className="text-base" style={{ color: '#64748b' }}>⚙️</span>
+                    <span className="truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Transformations</span>
+                  </span>
+                  <span className="text-xs" style={{ color: '#64748b', flexShrink: 0 }}>
+                    {transformationsExpanded ? '▼' : '▶'}
+                  </span>
+                </button>
+                {transformationsExpanded && (
+                  <div style={{ marginTop: '6px', marginLeft: '8px' }}>
+                    {[
+                      { 
+                        id: 'join-combine', 
+                        label: 'Join & Combine Operations', 
+                        icon: '🔗',
+                        operations: [
+                          'Inner Join',
+                          'Left Join',
+                          'Right Join',
+                          'Full Outer Join',
+                          'Union'
+                        ]
+                      },
+                      { 
+                        id: 'filters', 
+                        label: 'Filters & Row Selection', 
+                        icon: '🔍',
+                        operations: [
+                          'Filter by condition (equals, contains, >, <, >=, <=)',
+                          'Multiple conditions (AND/OR logic)',
+                          'Remove nulls',
+                          'Remove duplicates',
+                          'Keep top/bottom N rows'
+                        ]
+                      },
+                      { 
+                        id: 'columns', 
+                        label: 'Select & Rename Columns', 
+                        icon: '📋',
+                        operations: [
+                          'Reorder columns',
+                          'Select specific columns'
+                        ]
+                      },
+                      { 
+                        id: 'aggregate', 
+                        label: 'Group & Aggregate', 
+                        icon: '📊',
+                        operations: [
+                          'Group by columns',
+                          'Sum',
+                          'Count',
+                          'Average',
+                          'Min/Max',
+                          'Count distinct'
+                        ]
+                      },
+                      { 
+                        id: 'date-time', 
+                        label: 'Date & Time Operations', 
+                        icon: '📅',
+                        operations: [
+                          'Extract year/month/day',
+                          'Date difference'
+                        ]
+                      },
+                      { 
+                        id: 'text', 
+                        label: 'Text & String Operations', 
+                        icon: '📝',
+                        operations: [
+                          'Split columns',
+                          'Trim whitespace',
+                          'Upper/lower case'
+                        ]
+                      },
+                      { 
+                        id: 'pivot', 
+                        label: 'Pivot & Unpivot', 
+                        icon: '🔄',
+                        operations: [
+                          'Pivot (rows to columns)',
+                          'Unpivot (columns to rows)'
+                        ]
+                      }
+                    ].map((category) => (
+                      <div key={category.id} style={{ marginBottom: '4px' }}>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            const newSet = new Set(expandedTransformCategories);
+                            if (newSet.has(category.id)) {
+                              newSet.delete(category.id);
+                            } else {
+                              newSet.add(category.id);
+                            }
+                            setExpandedTransformCategories(newSet);
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '11px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}
+                          className="hover:bg-slate-50"
+                        >
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                            {expandedTransformCategories.has(category.id) ? '▼' : '▶'}
+                          </span>
+                          <span style={{ fontSize: '12px' }}>{category.icon}</span>
+                          <span>{category.label}</span>
+                        </div>
+                        {expandedTransformCategories.has(category.id) && (
+                          <div style={{ marginLeft: '32px', paddingLeft: '8px', borderLeft: '2px solid #e2e8f0' }}>
+                            {category.operations.map((operation, idx) => (
+                              <div
+                                key={idx}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('application/json', JSON.stringify({
+                                    type: 'transformation',
+                                    category: category.id,
+                                    operation: operation
+                                  }));
+                                }}
+                                style={{
+                                  padding: '6px 12px',
+                                  fontSize: '11px',
+                                  borderRadius: '6px',
+                                  cursor: 'grab',
+                                  marginBottom: '2px',
+                                  color: '#475569'
+                                }}
+                                className="hover:bg-slate-100"
+                                title={`Drag to canvas: ${operation}`}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '8px', color: '#94a3b8' }}>●</span>
+                                  <span>{operation}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <div className="p-6 text-center">
