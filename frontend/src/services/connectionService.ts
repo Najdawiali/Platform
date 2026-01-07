@@ -153,4 +153,14 @@ export const connectionService = {
     );
     return response.data?.fields || [];
   },
+
+  /**
+   * Get Salesforce objects for an existing OAuth connection
+   */
+  async getSalesforceObjects(connectionId: string): Promise<any> {
+    const response = await api.get(`/api/connections/${connectionId}/salesforce/objects`, {
+      timeout: 15000 // 15 second timeout
+    });
+    return response.data;
+  },
 };

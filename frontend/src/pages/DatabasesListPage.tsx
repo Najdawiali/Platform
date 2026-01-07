@@ -405,7 +405,18 @@ export const DatabasesListPage: React.FC = () => {
   });
   const [editItems, setEditItems] = useState<string[]>([]);
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
+  const [editObjectSearch, setEditObjectSearch] = useState<string>('');
+  
+  // Salesforce field search + selection for edit modal
+  const [editSfFieldObject, setEditSfFieldObject] = useState<string>('');
+  const [editSfFieldSearch, setEditSfFieldSearch] = useState<string>('');
+  const [editSfFieldItems, setEditSfFieldItems] = useState<Array<{ name: string; label?: string; type?: string }>>([]);
+  const [editSfFieldStatus, setEditSfFieldStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [editSfFieldError, setEditSfFieldError] = useState<string>('');
+  const [editSfSelectedFieldsByObject, setEditSfSelectedFieldsByObject] = useState<Record<string, Set<string>>>({});
+  
   const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -514,6 +525,13 @@ export const DatabasesListPage: React.FC = () => {
     setEditTest({ status: 'idle', message: '' });
     setEditItems([]);
     setEditSelected(new Set());
+    setEditObjectSearch('');
+    setEditSfFieldObject('');
+    setEditSfFieldSearch('');
+    setEditSfFieldItems([]);
+    setEditSfFieldStatus('idle');
+    setEditSfFieldError('');
+    setEditSfSelectedFieldsByObject({});
 
     const cfg = await connectionService.getConnectionConfig(conn.id);
     const creds = (cfg?.credentials || {}) as Record<string, any>;
@@ -526,12 +544,30 @@ export const DatabasesListPage: React.FC = () => {
     setAutoSyncValue(best.value);
     setAutoSyncUnit(best.unit);
 
-    const selected =
-      conn.source_type === 'mongodb'
-        ? creds?.selected_collections
-        : creds?.selected_tables;
-    if (Array.isArray(selected)) {
-      setEditSelected(new Set(selected));
+    // Load previously selected objects/tables/collections
+    if (conn.source_type === 'salesforce') {
+      const selectedObjects = creds?.selected_objects;
+      if (Array.isArray(selectedObjects)) {
+        setEditSelected(new Set(selectedObjects));
+      }
+      
+      // Load previously selected fields per object
+      const fieldsByObject = creds?.selected_fields || {};
+      const fieldSets: Record<string, Set<string>> = {};
+      for (const [obj, fields] of Object.entries(fieldsByObject)) {
+        if (Array.isArray(fields)) {
+          fieldSets[obj] = new Set(fields as string[]);
+        }
+      }
+      setEditSfSelectedFieldsByObject(fieldSets);
+    } else {
+      const selected =
+        conn.source_type === 'mongodb'
+          ? creds?.selected_collections
+          : creds?.selected_tables;
+      if (Array.isArray(selected)) {
+        setEditSelected(new Set(selected));
+      }
     }
   };
 
@@ -541,24 +577,40 @@ export const DatabasesListPage: React.FC = () => {
     setEditItems([]);
 
     try {
-      const result = await connectionService.testConnection(editing.source_type, editCreds);
-      if (!result?.success) {
-        setEditTest({ status: 'error', message: result?.message || 'Connection failed.' });
-        return;
+      // For Salesforce OAuth connections, use the existing connection's stored credentials
+      if (editing.source_type === 'salesforce') {
+        const result = await connectionService.getSalesforceObjects(editing.id);
+        if (!result?.success || !result?.metadata?.objects || result.metadata.objects.length === 0) {
+          setEditTest({ status: 'error', message: result?.message || 'No Salesforce objects found. Please re-authenticate.' });
+          return;
+        }
+
+        const objectNames = result.metadata.objects.map((obj: any) => obj.name);
+        setEditTest({ status: 'success', message: result.message || 'Connection successful.' });
+        setEditItems(objectNames);
+
+        // For Salesforce, start with nothing selected (user must choose)
+        // Don't auto-select anything
+      } else {
+        // For other connection types, use the standard test connection
+        const result = await connectionService.testConnection(editing.source_type, editCreds);
+        if (!result?.success) {
+          setEditTest({ status: 'error', message: result?.message || 'Connection failed.' });
+          return;
+        }
+
+        const items =
+          editing.source_type === 'mongodb'
+            ? (result?.metadata?.collections || [])
+            : (result?.metadata?.tables || []);
+
+        const list: string[] = Array.isArray(items) ? items : [];
+        setEditTest({ status: 'success', message: result?.message || 'Connection successful.' });
+        setEditItems(list);
+
+        // Don't auto-select anything - let user choose
+        // (Keep existing selections if any)
       }
-
-      const items =
-        editing.source_type === 'mongodb'
-          ? (result?.metadata?.collections || [])
-          : (result?.metadata?.tables || []);
-
-      const list: string[] = Array.isArray(items) ? items : [];
-      setEditTest({ status: 'success', message: result?.message || 'Connection successful.' });
-      setEditItems(list);
-
-      // If there is no explicit selection saved, default to all
-      const alreadySelected = editSelected.size > 0;
-      if (!alreadySelected) setEditSelected(new Set(list));
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || 'Connection failed.';
       setEditTest({ status: 'error', message: msg });
@@ -580,6 +632,111 @@ export const DatabasesListPage: React.FC = () => {
       return;
     }
     setEditSelected(new Set(editItems));
+  };
+
+  // Filtered objects based on search
+  const visibleEditItems = useMemo(() => {
+    if (!editObjectSearch.trim()) return editItems;
+    const q = editObjectSearch.trim().toLowerCase();
+    return editItems.filter((name) => name.toLowerCase().includes(q));
+  }, [editItems, editObjectSearch]);
+
+  // Check if all visible items are selected
+  const visibleAllEditSelected = useMemo(() => {
+    return visibleEditItems.length > 0 && visibleEditItems.every((name) => editSelected.has(name));
+  }, [visibleEditItems, editSelected]);
+
+  // Toggle visible items
+  const setEditSelectAllVisible = (checked: boolean) => {
+    setEditSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        visibleEditItems.forEach((name) => next.add(name));
+      } else {
+        visibleEditItems.forEach((name) => next.delete(name));
+      }
+      return next;
+    });
+  };
+
+  // Selected Salesforce objects
+  const selectedEditSalesforceObjects = useMemo(() => {
+    return editItems.filter((name) => editSelected.has(name));
+  }, [editItems, editSelected]);
+
+  // Auto-select first Salesforce object for field search
+  useEffect(() => {
+    if (editing?.source_type !== 'salesforce') return;
+    if (editTest.status !== 'success') return;
+    if (selectedEditSalesforceObjects.length === 0) {
+      if (editSfFieldObject) setEditSfFieldObject('');
+      return;
+    }
+    if (!editSfFieldObject || !editSelected.has(editSfFieldObject)) {
+      setEditSfFieldObject(selectedEditSalesforceObjects[0]);
+    }
+  }, [editing, editTest.status, selectedEditSalesforceObjects, editSfFieldObject, editSelected]);
+
+  // Fetch fields for selected Salesforce object
+  useEffect(() => {
+    if (editing?.source_type !== 'salesforce') return;
+    if (editTest.status !== 'success') return;
+    if (!editSfFieldObject) return;
+
+    const fetchFields = async () => {
+      setEditSfFieldStatus('loading');
+      setEditSfFieldError('');
+      try {
+        const fields = await connectionService.getSalesforceFields(editing.id, editSfFieldObject);
+        setEditSfFieldItems(fields);
+        setEditSfFieldStatus('success');
+      } catch (e: any) {
+        const msg = e?.response?.data?.detail || e?.message || 'Failed to load fields.';
+        setEditSfFieldError(msg);
+        setEditSfFieldStatus('error');
+      }
+    };
+
+    fetchFields();
+  }, [editing, editTest.status, editSfFieldObject]);
+
+  // Filtered Salesforce fields
+  const visibleEditSfFields = useMemo(() => {
+    if (!editSfFieldSearch.trim()) return editSfFieldItems;
+    const q = editSfFieldSearch.trim().toLowerCase();
+    return editSfFieldItems.filter((f) => {
+      const name = f.name.toLowerCase();
+      const label = (f.label || '').toLowerCase();
+      return name.includes(q) || label.includes(q);
+    });
+  }, [editSfFieldItems, editSfFieldSearch]);
+
+  // Initialize with Id field selected by default for new objects (only if not already loaded)
+  useEffect(() => {
+    if (!editSfFieldObject) return;
+    if (editing?.source_type !== 'salesforce') return;
+    
+    setEditSfSelectedFieldsByObject((prev) => {
+      // If this object already has selections (from loaded config), don't override
+      if (prev[editSfFieldObject]) return prev;
+      // Otherwise, initialize with just Id
+      return { ...prev, [editSfFieldObject]: new Set(['Id']) };
+    });
+  }, [editSfFieldObject, editing]);
+
+  // Toggle Salesforce field
+  const toggleEditSfField = (fieldName: string) => {
+    if (!editSfFieldObject) return;
+    if (fieldName === 'Id') return; // Id is always required
+    setEditSfSelectedFieldsByObject((prev) => {
+      const current = prev[editSfFieldObject] ? new Set(prev[editSfFieldObject]) : new Set<string>(['Id']);
+      if (current.has(fieldName)) {
+        current.delete(fieldName);
+      } else {
+        current.add(fieldName);
+      }
+      return { ...prev, [editSfFieldObject]: current };
+    });
   };
 
   if (isLoading) {
@@ -926,7 +1083,14 @@ export const DatabasesListPage: React.FC = () => {
                 </div>
 
                 {/* Credentials */}
-                {editing.source_type !== 'mongodb' ? (
+                {editing.source_type === 'salesforce' ? (
+                  // Salesforce OAuth - no credential fields, user must re-auth if needed
+                  <div style={{ gridColumn: '1 / -1', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '13px', color: '#64748b' }}>
+                      This is an OAuth connection. To update credentials, please delete this connection and sign in again with Salesforce.
+                    </div>
+                  </div>
+                ) : editing.source_type !== 'mongodb' ? (
                   <>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>Host</div>
@@ -1047,27 +1211,43 @@ export const DatabasesListPage: React.FC = () => {
 
               {editTest.status === 'success' && (
                 <div style={{ marginTop: '18px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <input
+                      value={editObjectSearch}
+                      onChange={(e) => setEditObjectSearch(e.target.value)}
+                      placeholder={editing.source_type === 'salesforce' ? 'Search objects…' : editing.source_type === 'mongodb' ? 'Search collections…' : 'Search tables…'}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        backgroundColor: '#f8fafc',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                      {editing.source_type === 'mongodb' ? 'Collections' : 'Tables'}
+                      {editing.source_type === 'mongodb' ? 'Collections' : editing.source_type === 'salesforce' ? 'Objects' : 'Tables'}
                     </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#0f172a' }}>
                       <input
                         type="checkbox"
-                        checked={editItems.length > 0 && editSelected.size === editItems.length}
-                        onChange={(e) => setEditSelectAll(e.target.checked)}
+                        checked={visibleAllEditSelected}
+                        onChange={(e) => setEditSelectAllVisible(e.target.checked)}
                       />
                       Select all
                     </label>
                   </div>
 
-                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '260px', overflow: 'auto', backgroundColor: 'white' }}>
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '220px', overflow: 'auto', backgroundColor: 'white' }}>
                     {editItems.length === 0 ? (
                       <div style={{ padding: '12px 14px', fontSize: '13px', color: '#64748b' }}>
-                        No {editing.source_type === 'mongodb' ? 'collections' : 'tables'} found.
+                        No {editing.source_type === 'mongodb' ? 'collections' : editing.source_type === 'salesforce' ? 'objects' : 'tables'} found.
                       </div>
                     ) : (
-                      editItems.map((name) => (
+                      visibleEditItems.map((name) => (
                         <label
                           key={name}
                           style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', color: '#0f172a' }}
@@ -1078,13 +1258,140 @@ export const DatabasesListPage: React.FC = () => {
                       ))
                     )}
                   </div>
+
+                  {editing.source_type === 'salesforce' && selectedEditSalesforceObjects.length > 0 && (
+                    <div style={{ marginTop: '14px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
+                        Search fields
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <select
+                          value={editSfFieldObject}
+                          onChange={(e) => {
+                            setEditSfFieldObject(e.target.value);
+                            setEditSfFieldSearch('');
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0',
+                            backgroundColor: '#f8fafc',
+                            fontSize: '14px'
+                          }}
+                        >
+                          {selectedEditSalesforceObjects.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={editSfFieldSearch}
+                          onChange={(e) => setEditSfFieldSearch(e.target.value)}
+                          placeholder="Search fields…"
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0',
+                            backgroundColor: '#f8fafc',
+                            fontSize: '14px'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{
+                        marginTop: '10px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        maxHeight: '180px',
+                        overflow: 'auto',
+                        backgroundColor: 'white'
+                      }}>
+                        {editSfFieldStatus === 'loading' ? (
+                          <div style={{ padding: '12px 14px', fontSize: '13px', color: '#64748b' }}>
+                            Loading fields…
+                          </div>
+                        ) : editSfFieldStatus === 'error' ? (
+                          <div style={{ padding: '12px 14px', fontSize: '13px', color: '#dc2626', fontWeight: 700 }}>
+                            {editSfFieldError || 'Failed to load fields.'}
+                          </div>
+                        ) : visibleEditSfFields.length === 0 ? (
+                          <div style={{ padding: '12px 14px', fontSize: '13px', color: '#64748b' }}>
+                            No matching fields.
+                          </div>
+                        ) : (
+                          visibleEditSfFields.map((f) => (
+                            <label
+                              key={f.name}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '10px',
+                                padding: '10px 14px',
+                                borderBottom: '1px solid #f1f5f9',
+                                fontSize: '13px',
+                                color: '#0f172a'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={
+                                  f.name === 'Id'
+                                    ? true
+                                    : (editSfSelectedFieldsByObject[editSfFieldObject] || new Set<string>()).has(f.name)
+                                }
+                                disabled={f.name === 'Id'}
+                                onChange={() => toggleEditSfField(f.name)}
+                                style={{ marginTop: '2px' }}
+                              />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 700 }}>{f.name}</div>
+                                {f.label && f.label !== f.name && (
+                                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{f.label}</div>
+                                )}
+                                {f.type && (
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>{f.type}</div>
+                                )}
+                              </div>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
+            {isSaving && (
+              <div style={{ 
+                padding: '14px 20px', 
+                borderTop: '1px solid #e2e8f0',
+                backgroundColor: '#f0f9ff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid #3b82f6',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e40af' }}>
+                  Saving changes and syncing data...
+                </div>
+              </div>
+            )}
+
             <div style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button
                 onClick={() => setEditing(null)}
+                disabled={isSaving}
                 style={{
                   backgroundColor: 'white',
                   color: '#0f172a',
@@ -1093,33 +1400,51 @@ export const DatabasesListPage: React.FC = () => {
                   padding: '10px 14px',
                   fontSize: '14px',
                   fontWeight: 800,
-                  cursor: 'pointer'
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  opacity: isSaving ? 0.6 : 1
                 }}
               >
                 Cancel
               </button>
               <button
                 onClick={async () => {
-                  const nextCreds = { ...editCreds };
-                  nextCreds.auto_sync_enabled = true;
-                  nextCreds.auto_sync_interval_seconds = Math.max(1, Number(autoSyncValue || 1)) * unitToSeconds(autoSyncUnit);
-                  if (editing.source_type === 'mongodb') {
-                    nextCreds.selected_collections = Array.from(editSelected);
-                  } else {
-                    nextCreds.selected_tables = Array.from(editSelected);
-                  }
+                  setIsSaving(true);
+                  try {
+                    const nextCreds = { ...editCreds };
+                    nextCreds.auto_sync_enabled = true;
+                    nextCreds.auto_sync_interval_seconds = Math.max(1, Number(autoSyncValue || 1)) * unitToSeconds(autoSyncUnit);
+                    
+                    if (editing.source_type === 'salesforce') {
+                      // For Salesforce, store selected objects and their fields
+                      nextCreds.selected_objects = Array.from(editSelected);
+                      nextCreds.selected_fields = {};
+                      for (const obj of nextCreds.selected_objects) {
+                        const fields = editSfSelectedFieldsByObject[obj] || new Set(['Id']);
+                        nextCreds.selected_fields[obj] = Array.from(fields);
+                      }
+                    } else if (editing.source_type === 'mongodb') {
+                      nextCreds.selected_collections = Array.from(editSelected);
+                    } else {
+                      nextCreds.selected_tables = Array.from(editSelected);
+                    }
 
-                  await connectionService.updateConnection(editing.id, {
-                    name: editName,
-                    description: editDescription,
-                    credentials: nextCreds,
-                    source_type: editing.source_type,
-                  } as any);
-                  await queryClient.invalidateQueries({ queryKey: ['connections'] });
-                  await queryClient.invalidateQueries({ queryKey: ['databases', editing.id] });
-                  await queryClient.invalidateQueries({ queryKey: ['connectionStats', editing.id] });
-                  setEditing(null);
+                    await connectionService.updateConnection(editing.id, {
+                      name: editName,
+                      description: editDescription,
+                      credentials: nextCreds,
+                      source_type: editing.source_type,
+                    } as any);
+                    await queryClient.invalidateQueries({ queryKey: ['connections'] });
+                    await queryClient.invalidateQueries({ queryKey: ['databases', editing.id] });
+                    await queryClient.invalidateQueries({ queryKey: ['connectionStats', editing.id] });
+                    setEditing(null);
+                  } catch (error: any) {
+                    alert(error?.response?.data?.detail || error?.message || 'Failed to save connection');
+                  } finally {
+                    setIsSaving(false);
+                  }
                 }}
+                disabled={isSaving}
                 style={{
                   backgroundColor: '#4f46e5',
                   color: 'white',
@@ -1128,10 +1453,11 @@ export const DatabasesListPage: React.FC = () => {
                   padding: '10px 14px',
                   fontSize: '14px',
                   fontWeight: 900,
-                  cursor: 'pointer'
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  opacity: isSaving ? 0.7 : 1
                 }}
               >
-                Save
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

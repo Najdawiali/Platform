@@ -18,7 +18,7 @@ from jose import jwt
 
 from ..database import get_db
 from ..models.user import User
-from ..models.connection import SourceType
+from ..models.connection import Connection, SourceType
 from ..schemas.connection import (
     ConnectionCreate,
     ConnectionUpdate,
@@ -131,13 +131,13 @@ def salesforce_oauth_start(
         "name": (body.name or "Salesforce").strip() or "Salesforce",
         "auth_base_url": auth_base_url,
         "api_version": (body.api_version or "").strip(),
-        # PKCE verifier for orgs that require code challenge
-        "pkce_v": None,
         "exp": datetime.utcnow() + timedelta(minutes=10),
     }
 
+    # Generate PKCE pair (required by this Salesforce Connected App)
     pkce_verifier, pkce_challenge = _generate_pkce_pair()
     payload["pkce_v"] = pkce_verifier
+    
     state = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
     params = {
@@ -146,7 +146,7 @@ def salesforce_oauth_start(
         "redirect_uri": settings.SALESFORCE_REDIRECT_URI,
         "scope": settings.SALESFORCE_SCOPES,
         "state": state,
-        # PKCE (S256)
+        # PKCE (S256) - required by Connected App
         "code_challenge": pkce_challenge,
         "code_challenge_method": "S256",
     }
@@ -338,12 +338,9 @@ async def salesforce_oauth_callback(
     
     for conn in existing:
         if conn.credentials.get("sf_org_id") == sf_org_id:
-            # Update existing connection instead of creating duplicate
-            conn.credentials = credentials
-            conn.name = connection_name
-            db.commit()
-            db.refresh(conn)
-            redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_connection_id={conn.id}"
+            # Connection already exists - tell user to edit it instead
+            error_msg = f"This Salesforce org ({sf_org_name or 'organization'}) is already connected as '{conn.name}'. Please edit the existing connection instead of creating a new one."
+            redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_oauth_error={quote(error_msg)}"
             return RedirectResponse(url=redirect_url, status_code=303)
 
     connection = ConnectionService.create_connection(
@@ -619,6 +616,70 @@ def get_connection_stats(
     """
     stats = ConnectionService.get_connection_stats(connection_id, current_user, db)
     return stats
+
+
+@router.get("/{connection_id}/salesforce/objects")
+def get_salesforce_objects(
+        connection_id: str,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """Get Salesforce objects for an existing OAuth connection."""
+    connection = ConnectionService.get_connection_by_id(connection_id, current_user, db)
+    
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connection not found"
+        )
+    
+    if connection.source_type != "salesforce":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint is only for Salesforce connections"
+        )
+    
+    # Get the stored OAuth credentials
+    creds = connection.credentials or {}
+    access_token = creds.get("access_token")
+    instance_url = creds.get("instance_url")
+    
+    if not access_token or not instance_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing OAuth credentials. Please re-authenticate."
+        )
+    
+    # Use the SalesforceConnector to get objects
+    try:
+        from app.connectors.salesforce_connector import SalesforceConnector
+        
+        connector = SalesforceConnector(
+            auth_type="oauth",
+            access_token=access_token,
+            instance_url=instance_url,
+            refresh_token=creds.get("refresh_token"),
+            client_id=creds.get("client_id"),
+            client_secret=creds.get("client_secret"),
+        )
+        
+        connector.connect()
+        objects = connector.list_objects()
+        
+        # Format like the test_connection response
+        return {
+            "success": True,
+            "message": f"Found {len(objects)} Salesforce objects",
+            "metadata": {
+                "objects": [{"name": obj} for obj in objects]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Salesforce objects: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch Salesforce objects: {str(e)}"
+        )
 
 
 @router.post("/{connection_id}/sync")
