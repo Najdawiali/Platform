@@ -1017,6 +1017,7 @@ export const DataModelingPage: React.FC = () => {
                           <div
                             key={tableName}
                             className="group relative"
+                            style={{ marginBottom: '4px' }}
                           >
                             <div
                               draggable
@@ -1031,26 +1032,32 @@ export const DataModelingPage: React.FC = () => {
                               }
                               style={{
                                 padding: '8px 12px',
+                                paddingRight: '40px',
                                 fontSize: '11px',
                                 borderRadius: '8px',
                                 cursor: 'grab',
-                                marginBottom: '4px',
-                                paddingRight: '32px'
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
                               }}
                               className="hover:bg-slate-50"
                               title={tableName}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '12px' }}>📋</span>
-                                <span>{tableName}</span>
-                              </div>
+                              <span style={{ fontSize: '12px', flexShrink: 0 }}>📋</span>
+                              <span style={{ 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis', 
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                minWidth: 0
+                              }}>{tableName}</span>
                             </div>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handlePreviewData('database', tableName, tableName, conn.id);
                               }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold z-10"
                               title="Preview data"
                             >
                               ...
@@ -1097,6 +1104,7 @@ export const DataModelingPage: React.FC = () => {
                         <div
                           key={ds.id}
                           className="group relative"
+                          style={{ marginBottom: '4px' }}
                         >
                           <div
                             draggable
@@ -1105,26 +1113,32 @@ export const DataModelingPage: React.FC = () => {
                             }
                             style={{
                               padding: '8px 12px',
+                              paddingRight: '40px',
                               fontSize: '11px',
                               borderRadius: '8px',
                               cursor: 'grab',
-                              marginBottom: '4px',
-                              paddingRight: '32px'
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
                             }}
                             className="hover:bg-slate-50"
                             title={displayName}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '12px' }}>📄</span>
-                              <span>{displayName}</span>
-                            </div>
+                            <span style={{ fontSize: '12px', flexShrink: 0 }}>📄</span>
+                            <span style={{ 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis', 
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                              minWidth: 0
+                            }}>{displayName}</span>
                           </div>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handlePreviewData('dataset', String(ds.id), displayName);
                             }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold z-10"
                             title="Preview data"
                           >
                             ...
