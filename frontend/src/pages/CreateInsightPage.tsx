@@ -24,7 +24,7 @@ export const CreateInsightPage: React.FC = () => {
       subtitle: 'Build an insight by selecting data and configuring charts.',
       icon: '🧩',
       iconBg: '#ecfdf5',
-      onClick: () => navigate('/visualize'),
+      onClick: () => navigate('/model'),
     },
     {
       key: 'sql',
@@ -41,7 +41,7 @@ export const CreateInsightPage: React.FC = () => {
       icon: '✨',
       iconBg: '#ecfdf5',
       isRecommended: true,
-      onClick: () => navigate('/model'),
+      onClick: () => alert('AI Agent feature is coming soon! 🚀'),
     },
   ];
 

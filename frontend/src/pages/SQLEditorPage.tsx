@@ -87,8 +87,8 @@ export const SQLEditorPage: React.FC = () => {
   const DS_DEBUG = import.meta.env.VITE_DEBUG_DATASOURCES === 'true';
 
   const FILE_SOURCE_TYPES = ['csv', 'excel', 'json', 'txt', 'md', 'mdx', 'pdf'] as const;
-  // Keep this aligned with DatabasesListPage: only these show as databases.
-  const DATABASE_SOURCE_TYPES = ['mysql', 'postgresql', 'mongodb'] as const;
+  // Keep this aligned with DatabasesListPage: show all database connections
+  const DATABASE_SOURCE_TYPES = ['mysql', 'postgresql', 'mongodb', 'salesforce'] as const;
 
   const isFileSourceType = (t: unknown): boolean =>
     typeof t === 'string' && (FILE_SOURCE_TYPES as readonly string[]).includes(t);

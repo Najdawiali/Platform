@@ -16,8 +16,7 @@ export const Layout: React.FC = () => {
     { path: '/databases', label: 'Databases', icon: '🗄️' },
     { path: '/insights', label: 'Insights', icon: '💡' },
     { path: '/dashboards', label: 'Dashboards', icon: '▦' },
-    // Map "AI Agent" to the existing modeling page for now
-    { path: '/model', label: 'AI Agent', icon: '✨' },
+    // AI Agent removed for now - coming soon
   ];
 
   return (
