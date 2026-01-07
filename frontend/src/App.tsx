@@ -20,6 +20,7 @@ import { FileUploadsPage } from './pages/FileUploadsPage';
 import { FileDetailPage } from './pages/FileDetailPage';
 import { CreateDatabasePage } from './pages/CreateDatabasePage';
 import { CreateDashboardPage } from './pages/CreateDashboardPage';
+import { AIChatPage } from './pages/AIChatPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,7 +39,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
-          
+
           <Route
             path="/"
             element={
@@ -59,6 +60,7 @@ function App() {
             <Route path="/insights/:id" element={<DashboardViewPage />} />
             <Route path="/visualize" element={<VisualizePage />} />
             <Route path="/model" element={<DataModelingPage />} />
+            <Route path="/ai-chat" element={<AIChatPage />} />
             <Route path="/dashboards" element={<DashboardsPage />} />
             <Route path="/dashboards/new" element={<CreateDashboardPage />} />
             <Route path="/dashboards/:id" element={<DashboardViewPage />} />

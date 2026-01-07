@@ -208,7 +208,7 @@ export const HomePage: React.FC = () => {
               icon={<span style={{ fontSize: '18px' }}>✨</span>}
               title="Ask AI"
               subtitle="Query data with natural language"
-              onClick={() => navigate('/model')}
+              onClick={() => navigate('/ai-chat')}
             />
           </div>
         </div>
@@ -327,61 +327,7 @@ export const HomePage: React.FC = () => {
           </div>
         </div>
 
-        <div
-          style={{
-            marginTop: '22px',
-            backgroundColor: '#f1f5f9',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '16px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-            <div
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '14px',
-                backgroundColor: '#10b981',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                flexShrink: 0,
-                fontWeight: 900,
-              }}
-            >
-              ⚡
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>Try asking the AI Agent</div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                "Show me the top 5 products by revenue this month" or "Compare sales between Q1 and Q2"
-              </div>
-            </div>
-          </div>
 
-          <button
-            onClick={() => navigate('/model')}
-            style={{
-              backgroundColor: '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '10px 14px',
-              fontSize: '13px',
-              fontWeight: 900,
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            Open AI Agent
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -162,7 +162,7 @@ export const DataModelingPage: React.FC = () => {
     editingTableId?: string;
   } | null>(null);
   const [joinForm, setJoinForm] = useState({ joinType: 'inner', filter: '', transform: '' });
-  
+
   // ========== State: Viewport ==========
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [isPanning, setIsPanning] = useState(false);
@@ -274,12 +274,12 @@ export const DataModelingPage: React.FC = () => {
                 prev.map((t) =>
                   t.id === table.id
                     ? {
-                        ...t,
-                        columns: result.columns.map((col: any) => ({
-                          name: col.name || col,
-                          type: col.type || 'string',
-                        })),
-                      }
+                      ...t,
+                      columns: result.columns.map((col: any) => ({
+                        name: col.name || col,
+                        type: col.type || 'string',
+                      })),
+                    }
                     : t
                 )
               );
@@ -295,12 +295,12 @@ export const DataModelingPage: React.FC = () => {
             // Extract dataset ID from table.id (format: "ds-{id}")
             const datasetId = table.id.replace('ds-', '');
             console.log('Fetching columns for dataset:', { tableId: table.id, datasetId, tableName: table.name });
-            
+
             const preview = await datasetService.getDatasetPreview(datasetId, 20);
             console.log('Preview response:', preview);
-            
+
             let cols: ColumnInfo[] = [];
-            
+
             if (preview?.columns && Array.isArray(preview.columns)) {
               cols = preview.columns.map((colName: string) => ({
                 name: colName,
@@ -316,7 +316,7 @@ export const DataModelingPage: React.FC = () => {
               }));
               console.log('✓ Got columns from preview.rows:', cols.length);
             }
-            
+
             if (cols.length > 0) {
               setTables((prev) =>
                 prev.map((t) =>
@@ -364,7 +364,7 @@ export const DataModelingPage: React.FC = () => {
   );
 
   const visibleConnections = useMemo(
-    () => availableConnections.filter((c) => 
+    () => availableConnections.filter((c) =>
       isValidName(c.name) && isDatabaseSourceType((c as any)?.source_type)
     ),
     [availableConnections]
@@ -400,12 +400,12 @@ export const DataModelingPage: React.FC = () => {
   );
 
   // ========== Preview Handler ==========
-  
+
   const handlePreviewData = async (type: 'dataset' | 'database', id: string, name: string, connectionId?: string) => {
     setIsLoadingPreview(true);
     setPreviewModalOpen(true);
     setPreviewData(null);
-    
+
     try {
       if (type === 'dataset') {
         const preview = await datasetService.getDatasetPreview(id, 10);
@@ -417,8 +417,8 @@ export const DataModelingPage: React.FC = () => {
         });
       } else if (type === 'database' && connectionId) {
         const result = await connectionService.queryData(connectionId, name, 10, 0);
-        const columns = result?.columns?.map((c: any) => c.name || c) || 
-                       (result?.data?.[0] ? Object.keys(result.data[0]) : []);
+        const columns = result?.columns?.map((c: any) => c.name || c) ||
+          (result?.data?.[0] ? Object.keys(result.data[0]) : []);
         setPreviewData({
           title: name,
           columns,
@@ -449,7 +449,7 @@ export const DataModelingPage: React.FC = () => {
     try {
       const json = e.dataTransfer.getData('application/json');
       if (!json) return;
-      
+
       const data = JSON.parse(json);
       if (!canvasRef.current) return;
 
@@ -528,7 +528,7 @@ export const DataModelingPage: React.FC = () => {
       // Calculate mouse position in world coordinates
       const mouseX = (e.clientX - rect.left - viewport.x) / viewport.scale;
       const mouseY = (e.clientY - rect.top - viewport.y) / viewport.scale;
-      
+
       setDragOffset({
         x: mouseX - table.x,
         y: mouseY - table.y,
@@ -549,10 +549,10 @@ export const DataModelingPage: React.FC = () => {
           prev.map((t) =>
             t.id === draggingTableId
               ? {
-                  ...t,
-                  x: x - dragOffset.x,
-                  y: y - dragOffset.y,
-                }
+                ...t,
+                x: x - dragOffset.x,
+                y: y - dragOffset.y,
+              }
               : t
           )
         );
@@ -571,26 +571,26 @@ export const DataModelingPage: React.FC = () => {
       const zoomSensitivity = 0.001;
       const delta = -e.deltaY * zoomSensitivity;
       const newScale = Math.min(Math.max(0.1, viewport.scale + delta), 5);
-      
+
       // Zoom towards mouse pointer could be implemented here, 
       // but for simplicity let's just zoom center or current position
       setViewport(prev => ({ ...prev, scale: newScale }));
     } else {
       // Pan on scroll
-      setViewport(prev => ({ 
-        ...prev, 
-        x: prev.x - e.deltaX, 
-        y: prev.y - e.deltaY 
+      setViewport(prev => ({
+        ...prev,
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY
       }));
     }
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1 || e.button === 0) { // Middle or Left click
-       if (e.target === canvasRef.current || (e.target as HTMLElement).tagName === 'svg') {
-         setIsPanning(true);
-         setLastPanPos({ x: e.clientX, y: e.clientY });
-       }
+      if (e.target === canvasRef.current || (e.target as HTMLElement).tagName === 'svg') {
+        setIsPanning(true);
+        setLastPanPos({ x: e.clientX, y: e.clientY });
+      }
     }
   };
 
@@ -624,10 +624,10 @@ export const DataModelingPage: React.FC = () => {
 
   const handleEditTable = (table: TableNode) => {
     if (!table.joinMetadata) return;
-    
+
     const leftTable = tables.find(t => t.name === table.joinMetadata?.leftTable);
     const rightTable = tables.find(t => t.name === table.joinMetadata?.rightTable);
-    
+
     if (!leftTable || !rightTable) {
       alert('Source tables not found!');
       return;
@@ -686,7 +686,7 @@ export const DataModelingPage: React.FC = () => {
       // Check if target is a transformation node
       const targetTable = tables.find(t => t.id === tableId);
       const sourceTable = tables.find(t => t.id === drawing.fromTableId);
-      
+
       if (targetTable?.type === 'transformation') {
         // Open transformation configuration modal
         if (!targetTable.isConfigured) {
@@ -759,59 +759,59 @@ export const DataModelingPage: React.FC = () => {
       // EDIT MODE
       const { editingTableId } = joinModalData;
       const tableToEdit = tables.find((t) => t.id === editingTableId);
-      
-      if (tableToEdit && tableToEdit.joinMetadata) {
-          const oldLeftColumn = tableToEdit.joinMetadata.leftColumn;
-          const oldRightColumn = tableToEdit.joinMetadata.rightColumn;
-          const oldLeftTableName = tableToEdit.joinMetadata.leftTable;
-          const oldRightTableName = tableToEdit.joinMetadata.rightTable;
-          
-          const fromTable = tables.find(t => t.name === oldLeftTableName);
-          const toTable = tables.find(t => t.name === oldRightTableName);
 
-          // 1. Update the Derived Table Metadata
-          setTables((prev) =>
-            prev.map((t) => {
-              if (t.id === editingTableId) {
+      if (tableToEdit && tableToEdit.joinMetadata) {
+        const oldLeftColumn = tableToEdit.joinMetadata.leftColumn;
+        const oldRightColumn = tableToEdit.joinMetadata.rightColumn;
+        const oldLeftTableName = tableToEdit.joinMetadata.leftTable;
+        const oldRightTableName = tableToEdit.joinMetadata.rightTable;
+
+        const fromTable = tables.find(t => t.name === oldLeftTableName);
+        const toTable = tables.find(t => t.name === oldRightTableName);
+
+        // 1. Update the Derived Table Metadata
+        setTables((prev) =>
+          prev.map((t) => {
+            if (t.id === editingTableId) {
+              return {
+                ...t,
+                joinMetadata: {
+                  ...t.joinMetadata!,
+                  joinType: joinForm.joinType,
+                  filter: joinForm.filter,
+                  transform: joinForm.transform,
+                  leftColumn: joinModalData.fromColumnName,
+                  rightColumn: joinModalData.toColumnName
+                },
+              };
+            }
+            return t;
+          })
+        );
+
+        // 2. Update the Relationship between the source tables
+        if (fromTable && toTable) {
+          setRelationships((prev) =>
+            prev.map((r) => {
+              if (
+                r.fromTableId === fromTable.id &&
+                r.toTableId === toTable.id &&
+                r.fromColumnName === oldLeftColumn &&
+                r.toColumnName === oldRightColumn
+              ) {
                 return {
-                  ...t,
-                  joinMetadata: {
-                    ...t.joinMetadata!,
-                    joinType: joinForm.joinType,
-                    filter: joinForm.filter,
-                    transform: joinForm.transform,
-                    leftColumn: joinModalData.fromColumnName,
-                    rightColumn: joinModalData.toColumnName
-                  },
+                  ...r,
+                  fromColumnName: joinModalData.fromColumnName,
+                  toColumnName: joinModalData.toColumnName,
+                  joinType: joinForm.joinType as any,
+                  filterCondition: joinForm.filter || undefined,
+                  transformations: joinForm.transform || undefined,
                 };
               }
-              return t;
+              return r;
             })
           );
-
-          // 2. Update the Relationship between the source tables
-          if (fromTable && toTable) {
-              setRelationships((prev) =>
-                prev.map((r) => {
-                  if (
-                    r.fromTableId === fromTable.id &&
-                    r.toTableId === toTable.id &&
-                    r.fromColumnName === oldLeftColumn &&
-                    r.toColumnName === oldRightColumn
-                  ) {
-                    return {
-                      ...r,
-                      fromColumnName: joinModalData.fromColumnName,
-                      toColumnName: joinModalData.toColumnName,
-                      joinType: joinForm.joinType as any,
-                      filterCondition: joinForm.filter || undefined,
-                      transformations: joinForm.transform || undefined,
-                    };
-                  }
-                  return r;
-                })
-              );
-          }
+        }
       }
     } else {
       // CREATE MODE
@@ -918,21 +918,21 @@ export const DataModelingPage: React.FC = () => {
     // Dataset: ~46px (padding + text)
     // Database/Derived: ~66px (padding + text + source)
     const headerHeight = table.type === 'dataset' ? 46 : 66;
-    
+
     if (!table.isExpanded) {
-       return {
-         x: isInput ? table.x : table.x + 320,
-         y: table.y + (headerHeight / 2)
-       };
+      return {
+        x: isInput ? table.x : table.x + 320,
+        y: table.y + (headerHeight / 2)
+      };
     }
 
     const columnHeight = 33; // 32px content + 1px border
     const scrollTop = table.scrollTop || 0;
-    
+
     // Calculate position relative to table top
     // Header + (Index * RowHeight) + (RowHeight / 2) - Scroll
     const relativeY = headerHeight + (columnIndex * columnHeight) + (columnHeight / 2) - scrollTop;
-    
+
     // Optional: Clamp to visible area if needed, but for now let it float
     // If we wanted to hide lines for scrolled-out columns, we'd return null here if relativeY < headerHeight or relativeY > headerHeight + 320 (max-h-80)
 
@@ -947,7 +947,7 @@ export const DataModelingPage: React.FC = () => {
   // ============================================================================
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="flex h-full bg-gradient-to-br from-slate-50 to-slate-100" style={{ minHeight: 0 }}>
       {/* SIDEBAR */}
       <div className="w-80 border-r-2 border-slate-300 flex flex-col overflow-hidden shadow-xl" style={{
         background: 'linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%)'
@@ -963,21 +963,19 @@ export const DataModelingPage: React.FC = () => {
         <div className="flex border-b border-slate-200 bg-white">
           <button
             onClick={() => setSidebarTab('data_sources')}
-            className={`flex-1 py-3 px-4 text-sm font-semibold transition-colors ${
-              sidebarTab === 'data_sources'
+            className={`flex-1 py-3 px-4 text-sm font-semibold transition-colors ${sidebarTab === 'data_sources'
                 ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
                 : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
+              }`}
           >
             Data Sources
           </button>
           <button
             onClick={() => setSidebarTab('saved_workflows')}
-            className={`flex-1 py-3 px-4 text-sm font-semibold transition-colors ${
-              sidebarTab === 'saved_workflows'
+            className={`flex-1 py-3 px-4 text-sm font-semibold transition-colors ${sidebarTab === 'saved_workflows'
                 ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
                 : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
-            }`}
+              }`}
           >
             Saved Workflows
           </button>
@@ -994,7 +992,7 @@ export const DataModelingPage: React.FC = () => {
                     className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-slate-800 hover:shadow-md transition-all font-semibold"
                     style={{
                       border: '1px solid #e2e8f0',
-                      background: expandedConns.has(conn.id) 
+                      background: expandedConns.has(conn.id)
                         ? '#f8fafc'
                         : '#ffffff'
                     }}
@@ -1044,9 +1042,9 @@ export const DataModelingPage: React.FC = () => {
                               title={tableName}
                             >
                               <span style={{ fontSize: '12px', flexShrink: 0 }}>📋</span>
-                              <span style={{ 
-                                overflow: 'hidden', 
-                                textOverflow: 'ellipsis', 
+                              <span style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
                                 flex: 1,
                                 minWidth: 0
@@ -1101,50 +1099,51 @@ export const DataModelingPage: React.FC = () => {
                       {visibleUploadedFiles.map((ds: any) => {
                         const displayName = ds.original_filename || ds.name;
                         return (
-                        <div
-                          key={ds.id}
-                          className="group relative"
-                          style={{ marginBottom: '4px' }}
-                        >
                           <div
-                            draggable
-                            onDragStart={(e) =>
-                              handleDragStart(e, { id: ds.id, name: displayName, type: 'dataset', dataset: ds })
-                            }
-                            style={{
-                              padding: '8px 12px',
-                              paddingRight: '40px',
-                              fontSize: '11px',
-                              borderRadius: '8px',
-                              cursor: 'grab',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px'
-                            }}
-                            className="hover:bg-slate-50"
-                            title={displayName}
+                            key={ds.id}
+                            className="group relative"
+                            style={{ marginBottom: '4px' }}
                           >
-                            <span style={{ fontSize: '12px', flexShrink: 0 }}>📄</span>
-                            <span style={{ 
-                              overflow: 'hidden', 
-                              textOverflow: 'ellipsis', 
-                              whiteSpace: 'nowrap',
-                              flex: 1,
-                              minWidth: 0
-                            }}>{displayName}</span>
+                            <div
+                              draggable
+                              onDragStart={(e) =>
+                                handleDragStart(e, { id: ds.id, name: displayName, type: 'dataset', dataset: ds })
+                              }
+                              style={{
+                                padding: '8px 12px',
+                                paddingRight: '40px',
+                                fontSize: '11px',
+                                borderRadius: '8px',
+                                cursor: 'grab',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                              }}
+                              className="hover:bg-slate-50"
+                              title={displayName}
+                            >
+                              <span style={{ fontSize: '12px', flexShrink: 0 }}>📄</span>
+                              <span style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                minWidth: 0
+                              }}>{displayName}</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePreviewData('dataset', String(ds.id), displayName);
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold z-10"
+                              title="Preview data"
+                            >
+                              ...
+                            </button>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handlePreviewData('dataset', String(ds.id), displayName);
-                            }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-bold z-10"
-                            title="Preview data"
-                          >
-                            ...
-                          </button>
-                        </div>
-                      );})}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1176,39 +1175,39 @@ export const DataModelingPage: React.FC = () => {
                 {transformationsExpanded && (
                   <div style={{ marginTop: '6px', marginLeft: '8px' }}>
                     {[
-                      { 
-                        id: 'filters', 
-                        label: 'Filter', 
+                      {
+                        id: 'filters',
+                        label: 'Filter',
                         icon: '🔍'
                       },
-                      { 
-                        id: 'join-combine', 
-                        label: 'Join & Combine', 
+                      {
+                        id: 'join-combine',
+                        label: 'Join & Combine',
                         icon: '🔗'
                       },
-                      { 
-                        id: 'aggregate', 
-                        label: 'Aggregate', 
+                      {
+                        id: 'aggregate',
+                        label: 'Aggregate',
                         icon: '📊'
                       },
-                      { 
-                        id: 'columns', 
-                        label: 'Select Columns', 
+                      {
+                        id: 'columns',
+                        label: 'Select Columns',
                         icon: '📋'
                       },
-                      { 
-                        id: 'date-time', 
-                        label: 'Date & Time', 
+                      {
+                        id: 'date-time',
+                        label: 'Date & Time',
                         icon: '📅'
                       },
-                      { 
-                        id: 'text', 
-                        label: 'Text Operations', 
+                      {
+                        id: 'text',
+                        label: 'Text Operations',
                         icon: '📝'
                       },
-                      { 
-                        id: 'pivot', 
-                        label: 'Pivot', 
+                      {
+                        id: 'pivot',
+                        label: 'Pivot',
                         icon: '🔄'
                       }
                     ].map((category) => (
@@ -1262,13 +1261,13 @@ export const DataModelingPage: React.FC = () => {
             <p className="text-xs text-slate-600">Visualize data flow and relationships</p>
           </div>
           <div className="flex gap-2">
-            <button 
+            <button
               onClick={() => setTables([])}
               className="px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-all font-medium"
             >
               Clear Canvas
             </button>
-            <button 
+            <button
               onClick={handleSaveLineage}
               className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-medium shadow-sm"
             >
@@ -1290,8 +1289,8 @@ export const DataModelingPage: React.FC = () => {
           className="flex-1 relative bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 overflow-hidden cursor-grab active:cursor-grabbing"
         >
           {/* Transform Container */}
-          <div 
-            style={{ 
+          <div
+            style={{
               transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
               transformOrigin: '0 0',
               width: '100%',
@@ -1301,272 +1300,267 @@ export const DataModelingPage: React.FC = () => {
               left: 0
             }}
           >
-          {/* Grid Background */}
-          <div
-            className="absolute inset-0 pointer-events-none opacity-50"
-            style={{
-              backgroundImage: 'radial-gradient(circle, #94a3b8 1.5px, transparent 1.5px)',
-              backgroundSize: '28px 28px',
-              width: '10000px', // Large enough to cover pan
-              height: '10000px',
-              transform: 'translate(-5000px, -5000px)' // Center the grid
-            }}
-          />
-
-          {/* SVG Relationships */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-            {relationships.map((rel) => {
-              const fromTable = tables.find((t) => t.id === rel.fromTableId);
-              const toTable = tables.find((t) => t.id === rel.toTableId);
-              if (!fromTable || !toTable) return null;
-
-              const fromColIdx = fromTable.columns.findIndex((c) => c.name === rel.fromColumnName);
-              const toColIdx = toTable.columns.findIndex((c) => c.name === rel.toColumnName);
-              if (fromColIdx === -1 || toColIdx === -1) return null;
-
-              const fromPos = getColumnPortPos(rel.fromTableId, fromColIdx, false);
-              const toPos = getColumnPortPos(rel.toTableId, toColIdx, true);
-              if (!fromPos || !toPos) return null;
-
-              const midX = (fromPos.x + toPos.x) / 2;
-              const path = `M ${fromPos.x} ${fromPos.y} C ${midX} ${fromPos.y}, ${midX} ${toPos.y}, ${toPos.x} ${toPos.y}`;
-
-              return (
-                <g key={rel.id}>
-                  <path d={path} stroke="#94a3b8" strokeWidth="2" fill="none" />
-                  {/* Start Dot */}
-                  <circle cx={fromPos.x} cy={fromPos.y} r="4" fill="#64748b" stroke="white" strokeWidth="1.5" />
-                  {/* End Dot */}
-                  <circle cx={toPos.x} cy={toPos.y} r="4" fill="#64748b" stroke="white" strokeWidth="1.5" />
-                </g>
-              );
-            })}
-
-            {/* Drawing line */}
-            {drawing && (
-              <path
-                d={`M ${drawing.startX} ${drawing.startY} L ${mousePos.x} ${mousePos.y}`}
-                stroke="#10b981"
-                strokeWidth="2.5"
-                fill="none"
-                strokeDasharray="6,4"
-                opacity="0.8"
-              />
-            )}
-          </svg>
-
-          {/* Tables */}
-          {tables.map((table) => (
+            {/* Grid Background */}
             <div
-              key={table.id}
-              className={`absolute rounded-xl overflow-hidden transition-shadow ${
-                selectedTableId === table.id
-                  ? 'border-3 border-blue-600 shadow-2xl shadow-blue-400/40'
-                  : 'border-2 border-slate-400 shadow-xl hover:shadow-2xl'
-              }`}
+              className="absolute inset-0 pointer-events-none opacity-50"
               style={{
-                left: `${table.x}px`,
-                top: `${table.y}px`,
-                width: table.type === 'transformation' ? '240px' : 'auto',
-                minWidth: table.type === 'transformation' ? '240px' : '320px',
-                maxWidth: table.type === 'transformation' ? '240px' : '480px',
-                backgroundColor: table.type === 'transformation' ? '#3b82f6' : '#ffffff',
-                zIndex: selectedTableId === table.id ? 50 : 10,
-                transform: selectedTableId === table.id ? 'scale(1.02)' : 'scale(1)',
+                backgroundImage: 'radial-gradient(circle, #94a3b8 1.5px, transparent 1.5px)',
+                backgroundSize: '28px 28px',
+                width: '10000px', // Large enough to cover pan
+                height: '10000px',
+                transform: 'translate(-5000px, -5000px)' // Center the grid
               }}
-              onMouseDown={(e) => handleTableMouseDown(e, table.id)}
-            >
-              {/* Transformation Node Rendering */}
-              {table.type === 'transformation' ? (
-                <div className="p-6 text-center relative">
-                  {/* Delete Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTables((prev) => prev.filter((t) => t.id !== table.id));
-                      setRelationships((prev) => prev.filter((r) => r.fromTableId !== table.id && r.toTableId !== table.id));
-                    }}
-                    className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center bg-white/90 hover:bg-red-500 text-slate-600 hover:text-white rounded-full shadow-md transition-all font-bold text-sm"
-                    title="Remove transformation"
-                  >
-                    ×
-                  </button>
-                  
-                  <div className="text-white text-4xl mb-3">⚙️</div>
-                  <h3 className="font-bold text-white text-base mb-2">{table.name}</h3>
-                  {table.isConfigured && table.transformationConfig?.operation && (
-                    <p className="text-xs text-blue-100 mb-3">
-                      {table.transformationConfig.operation}
-                    </p>
-                  )}
-                  {!table.isConfigured && (
-                    <p className="text-xs text-blue-200 italic">Not configured</p>
-                  )}
-                  
-                  {/* Input Connection Point */}
-                  <div
-                    className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-blue-600 cursor-crosshair hover:scale-125 transition-all shadow-lg"
-                    onMouseUp={(e) => handleColumnMouseUp(e, table.id, 'input')}
-                    title="Connect input here"
-                  />
-                  
-                  {/* Output Connection Point */}
-                  <div
-                    className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-blue-600 cursor-crosshair hover:scale-125 transition-all shadow-lg"
-                    onMouseDown={(e) => handleColumnMouseDown(e, table.id, 'output')}
-                    title="Drag to connect output"
-                  />
-                </div>
-              ) : (
-                <>
-              {/* Header */}
+            />
+
+            {/* SVG Relationships */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+              {relationships.map((rel) => {
+                const fromTable = tables.find((t) => t.id === rel.fromTableId);
+                const toTable = tables.find((t) => t.id === rel.toTableId);
+                if (!fromTable || !toTable) return null;
+
+                const fromColIdx = fromTable.columns.findIndex((c) => c.name === rel.fromColumnName);
+                const toColIdx = toTable.columns.findIndex((c) => c.name === rel.toColumnName);
+                if (fromColIdx === -1 || toColIdx === -1) return null;
+
+                const fromPos = getColumnPortPos(rel.fromTableId, fromColIdx, false);
+                const toPos = getColumnPortPos(rel.toTableId, toColIdx, true);
+                if (!fromPos || !toPos) return null;
+
+                const midX = (fromPos.x + toPos.x) / 2;
+                const path = `M ${fromPos.x} ${fromPos.y} C ${midX} ${fromPos.y}, ${midX} ${toPos.y}, ${toPos.x} ${toPos.y}`;
+
+                return (
+                  <g key={rel.id}>
+                    <path d={path} stroke="#94a3b8" strokeWidth="2" fill="none" />
+                    {/* Start Dot */}
+                    <circle cx={fromPos.x} cy={fromPos.y} r="4" fill="#64748b" stroke="white" strokeWidth="1.5" />
+                    {/* End Dot */}
+                    <circle cx={toPos.x} cy={toPos.y} r="4" fill="#64748b" stroke="white" strokeWidth="1.5" />
+                  </g>
+                );
+              })}
+
+              {/* Drawing line */}
+              {drawing && (
+                <path
+                  d={`M ${drawing.startX} ${drawing.startY} L ${mousePos.x} ${mousePos.y}`}
+                  stroke="#10b981"
+                  strokeWidth="2.5"
+                  fill="none"
+                  strokeDasharray="6,4"
+                  opacity="0.8"
+                />
+              )}
+            </svg>
+
+            {/* Tables */}
+            {tables.map((table) => (
               <div
-                className={`px-4 py-3 cursor-move border-b border-slate-200 shadow-sm relative ${
-                  table.type === 'derived'
-                    ? 'bg-yellow-400'
-                    : table.type === 'database_table'
-                    ? 'bg-orange-400'
-                    : 'bg-blue-400'
-                }`}
-                onDoubleClick={() => toggleTableExpand(table.id)}
+                key={table.id}
+                className={`absolute rounded-xl overflow-hidden transition-shadow ${selectedTableId === table.id
+                    ? 'border-3 border-blue-600 shadow-2xl shadow-blue-400/40'
+                    : 'border-2 border-slate-400 shadow-xl hover:shadow-2xl'
+                  }`}
+                style={{
+                  left: `${table.x}px`,
+                  top: `${table.y}px`,
+                  width: table.type === 'transformation' ? '240px' : 'auto',
+                  minWidth: table.type === 'transformation' ? '240px' : '320px',
+                  maxWidth: table.type === 'transformation' ? '240px' : '480px',
+                  backgroundColor: table.type === 'transformation' ? '#3b82f6' : '#ffffff',
+                  zIndex: selectedTableId === table.id ? 50 : 10,
+                  transform: selectedTableId === table.id ? 'scale(1.02)' : 'scale(1)',
+                }}
+                onMouseDown={(e) => handleTableMouseDown(e, table.id)}
               >
-                {/* Delete Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTables((prev) => prev.filter((t) => t.id !== table.id));
-                    setRelationships((prev) => prev.filter((r) => r.fromTableId !== table.id && r.toTableId !== table.id));
-                  }}
-                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-white/90 hover:bg-red-500 text-slate-600 hover:text-white rounded-full shadow-md transition-all font-bold text-xs z-10"
-                  title="Remove table"
-                >
-                  ×
-                </button>
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0 pr-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 
-                        className="font-bold text-slate-900 text-sm tracking-tight truncate" 
-                        title={table.name}
-                      >
-                        {table.name}
-                      </h3>
-                    </div>
-                    {table.source && (
-                      <p className="text-xs text-slate-800/70 flex items-center gap-1 font-medium truncate" title={table.source}>
-                        {table.source}
+                {/* Transformation Node Rendering */}
+                {table.type === 'transformation' ? (
+                  <div className="p-6 text-center relative">
+                    {/* Delete Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTables((prev) => prev.filter((t) => t.id !== table.id));
+                        setRelationships((prev) => prev.filter((r) => r.fromTableId !== table.id && r.toTableId !== table.id));
+                      }}
+                      className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center bg-white/90 hover:bg-red-500 text-slate-600 hover:text-white rounded-full shadow-md transition-all font-bold text-sm"
+                      title="Remove transformation"
+                    >
+                      ×
+                    </button>
+
+                    <div className="text-white text-4xl mb-3">⚙️</div>
+                    <h3 className="font-bold text-white text-base mb-2">{table.name}</h3>
+                    {table.isConfigured && table.transformationConfig?.operation && (
+                      <p className="text-xs text-blue-100 mb-3">
+                        {table.transformationConfig.operation}
                       </p>
                     )}
-                  </div>
-                  <div className="flex items-center gap-2 pr-6">
-                    {table.type === 'derived' && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditTable(table);
-                          }}
-                          className="p-1 hover:bg-black/10 rounded text-slate-800"
-                          title="Edit Join"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSaveTable(table);
-                          }}
-                          className="p-1 hover:bg-black/10 rounded text-slate-800"
-                          title="Save Table"
-                        >
-                          💾
-                        </button>
-                      </>
+                    {!table.isConfigured && (
+                      <p className="text-xs text-blue-200 italic">Not configured</p>
                     )}
-                    <button
-                      onClick={() => toggleTableExpand(table.id)}
-                      className="text-slate-800 hover:text-black transition-colors"
+
+                    {/* Input Connection Point */}
+                    <div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-blue-600 cursor-crosshair hover:scale-125 transition-all shadow-lg"
+                      onMouseUp={(e) => handleColumnMouseUp(e, table.id, 'input')}
+                      title="Connect input here"
+                    />
+
+                    {/* Output Connection Point */}
+                    <div
+                      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-blue-600 cursor-crosshair hover:scale-125 transition-all shadow-lg"
+                      onMouseDown={(e) => handleColumnMouseDown(e, table.id, 'output')}
+                      title="Drag to connect output"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Header */}
+                    <div
+                      className={`px-4 py-3 cursor-move border-b border-slate-200 shadow-sm relative ${table.type === 'derived'
+                          ? 'bg-yellow-400'
+                          : table.type === 'database_table'
+                            ? 'bg-orange-400'
+                            : 'bg-blue-400'
+                        }`}
+                      onDoubleClick={() => toggleTableExpand(table.id)}
                     >
-                      {table.isExpanded ? '▼' : '▶'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Join Metadata Info */}
-              {table.joinMetadata && table.isExpanded && (
-                <div className="px-4 py-2 bg-yellow-100 border-b border-yellow-200 text-xs text-slate-800">
-                  <div className="font-bold mb-1">Join Details:</div>
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                    <span className="text-slate-600">Type:</span>
-                    <span className="font-mono uppercase">{table.joinMetadata.joinType}</span>
-                    <span className="text-slate-600">Left:</span>
-                    <span className="truncate" title={table.joinMetadata.leftColumn}>{table.joinMetadata.leftColumn}</span>
-                    <span className="text-slate-600">Right:</span>
-                    <span className="truncate" title={table.joinMetadata.rightColumn}>{table.joinMetadata.rightColumn}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Columns */}
-              {table.isExpanded && (
-                <div 
-                  className={`max-h-80 overflow-y-auto divide-y divide-slate-200/50 ${
-                    table.type === 'derived'
-                      ? 'bg-yellow-50'
-                      : table.type === 'database_table'
-                      ? 'bg-orange-50'
-                      : 'bg-blue-50'
-                  }`}
-                  onScroll={(e) => handleTableScroll(e, table.id)}
-                >
-                  {table.columns.length > 0 ? (
-                    table.columns.map((col, idx) => (
-                      <div
-                        key={`${col.name}-${idx}`}
-                        className="px-4 py-2 text-xs flex items-center justify-between hover:bg-white/50 group relative transition-all border-b border-slate-100 last:border-0"
-                        title={`${col.type}${col.nullable ? ' (nullable)' : ''}`}
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTables((prev) => prev.filter((t) => t.id !== table.id));
+                          setRelationships((prev) => prev.filter((r) => r.fromTableId !== table.id && r.toTableId !== table.id));
+                        }}
+                        className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-white/90 hover:bg-red-500 text-slate-600 hover:text-white rounded-full shadow-md transition-all font-bold text-xs z-10"
+                        title="Remove table"
                       >
-                        {/* Input Port */}
-                        <div
-                          className={`absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-slate-300 cursor-crosshair transition-all ${
-                            table.type === 'derived' ? 'bg-yellow-200 hover:bg-yellow-400' :
-                            table.type === 'database_table' ? 'bg-orange-200 hover:bg-orange-400' :
-                            'bg-blue-200 hover:bg-blue-400'
-                          }`}
-                          onMouseUp={(e) => handleColumnMouseUp(e, table.id, col.name)}
-                        />
+                        ×
+                      </button>
 
-                        {/* Column Info */}
-                        <div className="flex-1 flex items-center gap-2">
-                          <div className="flex flex-col">
-                            <span className="text-slate-700 font-medium truncate">{col.name}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0 pr-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3
+                              className="font-bold text-slate-900 text-sm tracking-tight truncate"
+                              title={table.name}
+                            >
+                              {table.name}
+                            </h3>
                           </div>
+                          {table.source && (
+                            <p className="text-xs text-slate-800/70 flex items-center gap-1 font-medium truncate" title={table.source}>
+                              {table.source}
+                            </p>
+                          )}
                         </div>
-
-                        {/* Output Port */}
-                        <div
-                          className={`absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-slate-300 cursor-crosshair transition-all ${
-                            table.type === 'derived' ? 'bg-yellow-200 hover:bg-yellow-400' :
-                            table.type === 'database_table' ? 'bg-orange-200 hover:bg-orange-400' :
-                            'bg-blue-200 hover:bg-blue-400'
-                          }`}
-                          onMouseDown={(e) => handleColumnMouseDown(e, table.id, col.name)}
-                        />
+                        <div className="flex items-center gap-2 pr-6">
+                          {table.type === 'derived' && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditTable(table);
+                                }}
+                                className="p-1 hover:bg-black/10 rounded text-slate-800"
+                                title="Edit Join"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSaveTable(table);
+                                }}
+                                className="p-1 hover:bg-black/10 rounded text-slate-800"
+                                title="Save Table"
+                              >
+                                💾
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => toggleTableExpand(table.id)}
+                            className="text-slate-800 hover:text-black transition-colors"
+                          >
+                            {table.isExpanded ? '▼' : '▶'}
+                          </button>
+                        </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="px-4 py-6 text-center text-xs text-slate-400 bg-white">
-                      No columns available
                     </div>
-                  )}
-                </div>
-              )}
-              </>
-              )}
-            </div>
-          ))}
+
+                    {/* Join Metadata Info */}
+                    {table.joinMetadata && table.isExpanded && (
+                      <div className="px-4 py-2 bg-yellow-100 border-b border-yellow-200 text-xs text-slate-800">
+                        <div className="font-bold mb-1">Join Details:</div>
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                          <span className="text-slate-600">Type:</span>
+                          <span className="font-mono uppercase">{table.joinMetadata.joinType}</span>
+                          <span className="text-slate-600">Left:</span>
+                          <span className="truncate" title={table.joinMetadata.leftColumn}>{table.joinMetadata.leftColumn}</span>
+                          <span className="text-slate-600">Right:</span>
+                          <span className="truncate" title={table.joinMetadata.rightColumn}>{table.joinMetadata.rightColumn}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Columns */}
+                    {table.isExpanded && (
+                      <div
+                        className={`max-h-80 overflow-y-auto divide-y divide-slate-200/50 ${table.type === 'derived'
+                            ? 'bg-yellow-50'
+                            : table.type === 'database_table'
+                              ? 'bg-orange-50'
+                              : 'bg-blue-50'
+                          }`}
+                        onScroll={(e) => handleTableScroll(e, table.id)}
+                      >
+                        {table.columns.length > 0 ? (
+                          table.columns.map((col, idx) => (
+                            <div
+                              key={`${col.name}-${idx}`}
+                              className="px-4 py-2 text-xs flex items-center justify-between hover:bg-white/50 group relative transition-all border-b border-slate-100 last:border-0"
+                              title={`${col.type}${col.nullable ? ' (nullable)' : ''}`}
+                            >
+                              {/* Input Port */}
+                              <div
+                                className={`absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-slate-300 cursor-crosshair transition-all ${table.type === 'derived' ? 'bg-yellow-200 hover:bg-yellow-400' :
+                                    table.type === 'database_table' ? 'bg-orange-200 hover:bg-orange-400' :
+                                      'bg-blue-200 hover:bg-blue-400'
+                                  }`}
+                                onMouseUp={(e) => handleColumnMouseUp(e, table.id, col.name)}
+                              />
+
+                              {/* Column Info */}
+                              <div className="flex-1 flex items-center gap-2">
+                                <div className="flex flex-col">
+                                  <span className="text-slate-700 font-medium truncate">{col.name}</span>
+                                </div>
+                              </div>
+
+                              {/* Output Port */}
+                              <div
+                                className={`absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-slate-300 cursor-crosshair transition-all ${table.type === 'derived' ? 'bg-yellow-200 hover:bg-yellow-400' :
+                                    table.type === 'database_table' ? 'bg-orange-200 hover:bg-orange-400' :
+                                      'bg-blue-200 hover:bg-blue-400'
+                                  }`}
+                                onMouseDown={(e) => handleColumnMouseDown(e, table.id, col.name)}
+                              />
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-4 py-6 text-center text-xs text-slate-400 bg-white">
+                            No columns available
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
           </div>
           {/* End Transform Container */}
         </div>
@@ -1586,30 +1580,30 @@ export const DataModelingPage: React.FC = () => {
                   <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold">
                     {tables.find((t) => t.id === joinModalData.fromTableId)?.name}
                   </span>
-                  
+
                   <select
                     value={joinModalData.fromColumnName}
-                    onChange={(e) => setJoinModalData({...joinModalData, fromColumnName: e.target.value})}
+                    onChange={(e) => setJoinModalData({ ...joinModalData, fromColumnName: e.target.value })}
                     className="text-blue-600 font-mono text-xs border-b border-blue-300 focus:outline-none bg-transparent max-w-[100px]"
                   >
                     {tables.find((t) => t.id === joinModalData.fromTableId)?.columns.map(col => (
-                        <option key={col.name} value={col.name}>{col.name}</option>
+                      <option key={col.name} value={col.name}>{col.name}</option>
                     ))}
                   </select>
 
                   <span className="text-slate-400">→</span>
-                  
+
                   <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-semibold">
                     {tables.find((t) => t.id === joinModalData.toTableId)?.name}
                   </span>
 
                   <select
                     value={joinModalData.toColumnName}
-                    onChange={(e) => setJoinModalData({...joinModalData, toColumnName: e.target.value})}
+                    onChange={(e) => setJoinModalData({ ...joinModalData, toColumnName: e.target.value })}
                     className="text-emerald-600 font-mono text-xs border-b border-emerald-300 focus:outline-none bg-transparent max-w-[100px]"
                   >
                     {tables.find((t) => t.id === joinModalData.toTableId)?.columns.map(col => (
-                        <option key={col.name} value={col.name}>{col.name}</option>
+                      <option key={col.name} value={col.name}>{col.name}</option>
                     ))}
                   </select>
                 </div>
@@ -1624,11 +1618,10 @@ export const DataModelingPage: React.FC = () => {
                     <button
                       key={type}
                       onClick={() => setJoinForm({ ...joinForm, joinType: type })}
-                      className={`px-3 py-2.5 rounded-lg border-2 text-xs capitalize font-bold transition-all ${
-                        joinForm.joinType === type
+                      className={`px-3 py-2.5 rounded-lg border-2 text-xs capitalize font-bold transition-all ${joinForm.joinType === type
                           ? 'bg-blue-600 border-blue-600 text-white shadow-md'
                           : 'border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
-                      }`}
+                        }`}
                     >
                       {type}
                     </button>
@@ -1700,7 +1693,7 @@ export const DataModelingPage: React.FC = () => {
         sourceNode={configSourceNode}
         onSave={(config) => {
           if (!configTargetNode) return;
-          
+
           // Update the transformation node with configuration
           setTables((prev) =>
             prev.map((t) =>
@@ -1709,7 +1702,7 @@ export const DataModelingPage: React.FC = () => {
                 : t
             )
           );
-          
+
           // Create relationship if drawing was active
           if (drawing && configSourceNode) {
             setRelationships((prev) => [
@@ -1724,7 +1717,7 @@ export const DataModelingPage: React.FC = () => {
               },
             ]);
           }
-          
+
           setConfigModalOpen(false);
           setConfigTargetNode(null);
           setConfigSourceNode(null);
@@ -1751,7 +1744,7 @@ export const DataModelingPage: React.FC = () => {
                 ×
               </button>
             </div>
-            
+
             <div className="flex-1 overflow-auto p-6">
               {isLoadingPreview ? (
                 <div className="flex items-center justify-center h-64">
@@ -1801,7 +1794,7 @@ export const DataModelingPage: React.FC = () => {
                 </div>
               )}
             </div>
-            
+
             <div className="flex justify-end gap-3 p-6 border-t border-slate-200">
               <button
                 onClick={() => setPreviewModalOpen(false)}
