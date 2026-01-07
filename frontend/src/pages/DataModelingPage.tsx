@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { datasetService } from '../services/datasetService';
 import { connectionService } from '../services/connectionService';
+import type { Connection, Dataset } from '../types';
 
 // ============================================================================
 // TYPES
@@ -111,15 +113,25 @@ export const DataModelingPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // ========== Constants ==========
+  const FILE_SOURCE_TYPES = ['csv', 'excel', 'json', 'txt', 'md', 'mdx', 'pdf'] as const;
+  const DATABASE_SOURCE_TYPES = ['mysql', 'postgresql', 'mongodb', 'salesforce'] as const;
+
+  const isFileSourceType = (t: unknown): boolean =>
+    typeof t === 'string' && (FILE_SOURCE_TYPES as readonly string[]).includes(t);
+  const isDatabaseSourceType = (t: unknown): boolean =>
+    typeof t === 'string' && (DATABASE_SOURCE_TYPES as readonly string[]).includes(t);
+
   // ========== State: Data ==========
   const [tables, setTables] = useState<TableNode[]>([]);
   const [relationships, setRelationships] = useState<JoinRelationship[]>([]);
-  const [availableDatasets, setAvailableDatasets] = useState<any[]>([]);
   const [availableConnections, setAvailableConnections] = useState<any[]>([]);
   const [connectionTables, setConnectionTables] = useState<Record<string, string[]>>({});
 
   // ========== State: UI ==========
+  const [sidebarTab, setSidebarTab] = useState<'data_sources' | 'saved_workflows'>('data_sources');
   const [expandedConns, setExpandedConns] = useState<Set<string>>(new Set());
+  const [uploadedFilesExpanded, setUploadedFilesExpanded] = useState<boolean>(false);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -145,26 +157,28 @@ export const DataModelingPage: React.FC = () => {
 
   // ========== Effects: Load Data ==========
 
+  // Fetch all connections
+  const { data: allConnections = [] } = useQuery<Connection[]>({
+    queryKey: ['connections'],
+    queryFn: () => connectionService.getConnections(),
+  });
+
+  // Filter to only show database connections
+  const connections = allConnections.filter((c) => isDatabaseSourceType((c as any)?.source_type));
+
+  // Fetch datasets and filter for uploaded files only
+  const { data: datasets = [] } = useQuery<Dataset[]>({
+    queryKey: ['datasets'],
+    queryFn: () => datasetService.getDatasets(),
+  });
+
+  // Only show actual uploaded files (datasets created from a file upload)
+  const uploadedFileDatasets = datasets.filter((d: any) => !!d?.original_filename);
+
+  // Update availableConnections when connections change
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [datasets, conns] = await Promise.all([
-          datasetService.getDatasets(),
-          connectionService.getConnections(),
-        ]);
-        setAvailableDatasets(datasets.filter((ds) => isValidName(ds.name)));
-        setAvailableConnections(conns.filter((c) => isValidName(c.name)));
-      } catch (err: any) {
-        console.error('Failed to load data sources:', err);
-        // If authentication failed, redirect to login
-        if (err?.response?.status === 401 || err?.response?.data?.detail?.includes('credentials')) {
-          console.log('Authentication failed, redirecting to login...');
-          navigate('/login', { replace: true });
-        }
-      }
-    };
-    load();
-  }, [navigate]);
+    setAvailableConnections(connections.filter((c) => isValidName(c.name)));
+  }, [connections]);
 
   // Load tables from navigation state
   useEffect(() => {
@@ -263,14 +277,16 @@ export const DataModelingPage: React.FC = () => {
     });
   }, [tables]);
 
-  // Filtered data
-  const visibleDatasets = useMemo(
-    () => availableDatasets.filter((ds) => isValidName(ds.name)),
-    [availableDatasets]
+  // Filtered data - only show database connections and uploaded files
+  const visibleUploadedFiles = useMemo(
+    () => uploadedFileDatasets.filter((ds: any) => isValidName(ds.name)),
+    [uploadedFileDatasets]
   );
 
   const visibleConnections = useMemo(
-    () => availableConnections.filter((c) => isValidName(c.name)),
+    () => availableConnections.filter((c) => 
+      isValidName(c.name) && isDatabaseSourceType((c as any)?.source_type)
+    ),
     [availableConnections]
   );
 
@@ -781,110 +797,160 @@ export const DataModelingPage: React.FC = () => {
         <div className="p-6 border-b-2 border-slate-300 shadow-md" style={{
           background: 'linear-gradient(135deg, #6366f1 0%, #3b82f6 100%)'
         }}>
-          <h2 className="font-bold text-white text-base flex items-center gap-2">📊 DATA SOURCES</h2>
+          <h2 className="font-bold text-white text-base flex items-center gap-2">🧩 WORKFLOW BUILDER</h2>
           <p className="text-xs text-blue-100 mt-2">Drag tables to canvas to build lineage</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {/* Datasets */}
-          <div className="px-4 py-5 border-b-2 border-slate-200" style={{ backgroundColor: '#ffffff' }}>
-            <h3 className="text-xs font-black text-slate-800 uppercase mb-4 flex items-center gap-2 tracking-wide">
-              <span className="w-1.5 h-5 rounded shadow-sm" style={{
-                background: 'linear-gradient(to bottom, #3b82f6, #2563eb)'
-              }}></span>
-              Datasets
-            </h3>
-            <div className="space-y-2">
-              {visibleDatasets.length > 0 ? (
-                visibleDatasets.map((ds) => (
-                  <div
-                    key={ds.id}
-                    draggable
-                    onDragStart={(e) =>
-                      handleDragStart(e, { id: ds.id, name: ds.name, type: 'dataset' })
-                    }
-                    className="group px-4 py-3 rounded-lg text-slate-800 text-sm cursor-grab hover:shadow-md truncate transition-all duration-200 bg-blue-50 border border-blue-200 hover:border-blue-400"
-                    title={ds.name}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-blue-600 text-lg">📊</span>
-                      <span className="truncate font-semibold">{ds.name}</span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-400 px-2">No datasets available</p>
-              )}
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex border-b border-slate-200 bg-white">
+          <button
+            onClick={() => setSidebarTab('data_sources')}
+            className={`flex-1 py-3 px-4 text-sm font-semibold transition-colors ${
+              sidebarTab === 'data_sources'
+                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            Data Sources
+          </button>
+          <button
+            onClick={() => setSidebarTab('saved_workflows')}
+            className={`flex-1 py-3 px-4 text-sm font-semibold transition-colors ${
+              sidebarTab === 'saved_workflows'
+                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            Saved Workflows
+          </button>
+        </div>
 
-          {/* Connections */}
-          <div className="px-4 py-5" style={{ backgroundColor: '#ffffff' }}>
-            <h3 className="text-xs font-black text-slate-800 uppercase mb-4 flex items-center gap-2 tracking-wide">
-              <span className="w-1.5 h-5 rounded shadow-sm" style={{
-                background: 'linear-gradient(to bottom, #f97316, #ea580c)'
-              }}></span>
-              Databases
-            </h3>
-            <div className="space-y-2">
-              {visibleConnections.length > 0 ? (
-                visibleConnections.map((conn) => (
-                  <div key={conn.id}>
-                    <button
-                      onClick={() => toggleConnection(conn.id)}
-                      className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm text-slate-800 hover:shadow-md transition-all font-semibold"
-                      style={{
-                        border: '1px solid #d1d5db',
-                        background: expandedConns.has(conn.id) 
-                          ? '#fff7ed'
-                          : '#ffffff'
-                      }}
-                    >
-                      <span className="flex items-center gap-3 truncate">
-                        <span className="text-orange-600 text-base">🗄️</span>
-                        <span className="truncate">{conn.name}</span>
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {expandedConns.has(conn.id) ? '▼' : '▶'}
-                      </span>
-                    </button>
-                    {expandedConns.has(conn.id) && (
-                      <div className="pl-4 space-y-1.5 mt-2 border-l-2 border-orange-200">
-                        {connectionTables[conn.id]?.length ? (
-                          connectionTables[conn.id].map((tableName) => (
-                            <div
-                              key={tableName}
-                              draggable
-                              onDragStart={(e) =>
-                                handleDragStart(e, {
-                                  id: tableName,
-                                  name: tableName,
-                                  type: 'database_table',
-                                  connectionId: conn.id,
-                                  sourceName: conn.name,
-                                })
-                              }
-                              className="px-4 py-2.5 rounded-lg bg-orange-50 border border-orange-200 text-slate-800 text-sm cursor-grab hover:border-orange-400 hover:shadow-md truncate transition-all duration-200 shadow-sm"
-                              title={tableName}
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="text-orange-600 text-base">📋</span>
-                                <span className="truncate font-semibold">{tableName}</span>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-xs text-slate-400 px-3 py-1">Loading...</p>
-                        )}
+        <div className="flex-1 overflow-y-auto" style={{ padding: '12px' }}>
+          {sidebarTab === 'data_sources' ? (
+            <>
+              {/* Database Connections */}
+              {visibleConnections.length > 0 && visibleConnections.map((conn) => (
+                <div key={conn.id} style={{ marginBottom: '8px' }}>
+                  <button
+                    onClick={() => toggleConnection(conn.id)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-slate-800 hover:shadow-md transition-all font-semibold"
+                    style={{
+                      border: '1px solid #e2e8f0',
+                      background: expandedConns.has(conn.id) 
+                        ? '#f8fafc'
+                        : '#ffffff'
+                    }}
+                  >
+                    <span className="flex items-center gap-2 truncate" style={{ minWidth: 0 }}>
+                      <span className="text-base" style={{ color: '#64748b' }}>🗄️</span>
+                      <span className="truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conn.name}</span>
+                    </span>
+                    <span className="text-xs" style={{ color: '#64748b', flexShrink: 0 }}>
+                      {expandedConns.has(conn.id) ? '▼' : '▶'}
+                    </span>
+                  </button>
+                  {expandedConns.has(conn.id) && (
+                    <div style={{ marginTop: '6px', marginLeft: '8px' }}>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, padding: '6px 8px' }}>
+                        TABLES
                       </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-400 px-2">No database connections</p>
+                      {connectionTables[conn.id]?.length ? (
+                        connectionTables[conn.id].map((tableName) => (
+                          <div
+                            key={tableName}
+                            draggable
+                            onDragStart={(e) =>
+                              handleDragStart(e, {
+                                id: tableName,
+                                name: tableName,
+                                type: 'database_table',
+                                connectionId: conn.id,
+                                sourceName: conn.name,
+                              })
+                            }
+                            style={{
+                              padding: '8px 12px',
+                              fontSize: '11px',
+                              borderRadius: '8px',
+                              cursor: 'grab',
+                              marginBottom: '4px'
+                            }}
+                            className="hover:bg-slate-50"
+                            title={tableName}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '12px' }}>📋</span>
+                              <span>{tableName}</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: '8px 12px', fontSize: '11px', color: '#94a3b8' }}>
+                          Loading tables...
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Uploaded Files - Single Collapsible Group */}
+              {visibleUploadedFiles.length > 0 && (
+                <div style={{ marginTop: visibleConnections.length > 0 ? '8px' : '0', marginBottom: '8px' }}>
+                  <button
+                    onClick={() => setUploadedFilesExpanded(!uploadedFilesExpanded)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-slate-800 hover:shadow-md transition-all font-semibold"
+                    style={{
+                      border: '1px solid #e2e8f0',
+                      background: '#ffffff'
+                    }}
+                  >
+                    <span className="flex items-center gap-2 truncate" style={{ minWidth: 0 }}>
+                      <span className="text-base" style={{ color: '#64748b' }}>📁</span>
+                      <span className="truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Uploaded Files</span>
+                    </span>
+                    <span className="text-xs" style={{ color: '#64748b', flexShrink: 0 }}>
+                      {uploadedFilesExpanded ? '▼' : '▶'}
+                    </span>
+                  </button>
+                  {uploadedFilesExpanded && (
+                    <div style={{ marginTop: '6px', marginLeft: '8px' }}>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 800, padding: '6px 8px' }}>
+                        FILES
+                      </div>
+                      {visibleUploadedFiles.map((ds: any) => (
+                        <div
+                          key={ds.id}
+                          draggable
+                          onDragStart={(e) =>
+                            handleDragStart(e, { id: ds.id, name: ds.name, type: 'dataset' })
+                          }
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '11px',
+                            borderRadius: '8px',
+                            cursor: 'grab',
+                            marginBottom: '4px'
+                          }}
+                          className="hover:bg-slate-50"
+                          title={ds.name}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px' }}>📄</span>
+                            <span>{ds.name}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
+            </>
+          ) : (
+            <div className="p-6 text-center">
+              <p className="text-sm text-slate-500">Saved workflows coming soon...</p>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
