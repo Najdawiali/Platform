@@ -35,7 +35,7 @@ A modern, full-stack data analytics platform that enables users to connect, visu
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/data-platform.git
+git clone [https://github.com/your-username/data-platform.git](https://github.com/Najdawiali/Platform.git)
 cd data-platform
 ```
 
