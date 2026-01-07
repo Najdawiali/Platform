@@ -289,9 +289,12 @@ export const CreateDatabasePage: React.FC = () => {
           const itemList: string[] = Array.isArray(items) ? items : [];
           setDbTest({ status: 'success', message: result?.message || 'Connection successful.' });
           setDbItems(itemList);
-          setDbSelected(new Set(itemList));
+          // For Salesforce, default to previously selected objects (if any) instead of selecting ALL.
+          const previouslySelected: string[] = Array.isArray((creds as any)?.selected_objects) ? (creds as any).selected_objects : [];
+          const restored = previouslySelected.filter((o: any) => typeof o === 'string' && itemList.includes(o));
+          setDbSelected(new Set(restored));
           setDbSearch('');
-          setSfFieldObject(itemList[0] || '');
+          setSfFieldObject('');
           setSfFieldSearch('');
           setSfFieldItems([]);
           setSfFieldStatus('idle');
@@ -299,7 +302,7 @@ export const CreateDatabasePage: React.FC = () => {
 
           const existing = creds?.selected_fields && typeof creds.selected_fields === 'object' ? creds.selected_fields : {};
           const nextMap: Record<string, Set<string>> = {};
-          for (const obj of itemList) {
+          for (const obj of restored) {
             const selected = Array.isArray((existing as any)[obj]) ? (existing as any)[obj] : null;
             nextMap[obj] = new Set((selected && selected.length ? selected : ['Id']).map((x: any) => String(x)));
           }
@@ -373,12 +376,18 @@ export const CreateDatabasePage: React.FC = () => {
   };
 
   const toggleDbItem = (name: string) => {
+    const wasSelected = dbSelected.has(name);
     setDbSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
       else next.add(name);
       return next;
     });
+    // Salesforce UX: if the user selects an object checkbox, switch the field picker to it.
+    if (activeDbModal === 'salesforce' && !wasSelected) {
+      setSfFieldObject(name);
+      setSfFieldSearch('');
+    }
   };
 
   const visibleDbItems = useMemo(() => {
@@ -480,6 +489,23 @@ export const CreateDatabasePage: React.FC = () => {
     });
   }, [activeDbModal, sfFieldObject]);
 
+  // Ensure every selected Salesforce object has at least Id selected.
+  useEffect(() => {
+    if (activeDbModal !== 'salesforce') return;
+    if (!selectedSalesforceObjects.length) return;
+    setSfSelectedFieldsByObject((prev) => {
+      let changed = false;
+      const next: Record<string, Set<string>> = { ...prev };
+      for (const obj of selectedSalesforceObjects) {
+        if (!next[obj] || next[obj].size === 0) {
+          next[obj] = new Set(['Id']);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [activeDbModal, selectedSalesforceObjects]);
+
   const toggleSfField = (fieldName: string) => {
     if (!sfFieldObject) return;
     if (fieldName === 'Id') return;
@@ -492,6 +518,7 @@ export const CreateDatabasePage: React.FC = () => {
   };
 
   const addDbConnection = async () => {
+    console.log('[Add Connection] Starting...');
     if (!activeDbModal) return;
     if (dbTest.status !== 'success') {
       setDbTest({ status: 'error', message: 'Please test the connection successfully first.' });
@@ -512,9 +539,11 @@ export const CreateDatabasePage: React.FC = () => {
             : `Salesforce`;
 
     try {
+      setDbTest({ status: 'testing', message: 'Saving connection…' });
       const credentials: Record<string, any> = {};
 
       if (activeDbModal === 'salesforce') {
+        console.log('[Add Connection] Processing Salesforce connection...');
         if (!sfConnectionId) {
           setDbTest({ status: 'error', message: 'Please sign in with Salesforce first.' });
           return;
@@ -529,7 +558,10 @@ export const CreateDatabasePage: React.FC = () => {
           }
         }
 
+        console.log('[Add Connection] Fetching connection config...');
         const config = await connectionService.getConnectionConfig(sfConnectionId);
+        console.log('[Add Connection] Config received:', config);
+        
         const existingCreds: Record<string, any> = config?.credentials || {};
         credentials.selected_objects = Array.from(dbSelected);
         const fieldsOut: Record<string, string[]> = {};
@@ -544,6 +576,8 @@ export const CreateDatabasePage: React.FC = () => {
         for (const [k, v] of Object.entries(existingCreds)) {
           if (credentials[k] === undefined) credentials[k] = v;
         }
+        
+        console.log('[Add Connection] Updating connection with credentials:', credentials);
       } else if (activeDbModal === 'mongodb') {
         const userPart = encodeURIComponent(dbForm.username || '');
         const passPart = encodeURIComponent(dbForm.password || '');
@@ -568,23 +602,32 @@ export const CreateDatabasePage: React.FC = () => {
       }
 
       if (activeDbModal === 'salesforce') {
+        console.log('[Add Connection] Calling updateConnection API...');
         await connectionService.updateConnection(sfConnectionId!, {
           credentials,
         } as any);
+        console.log('[Add Connection] Update successful!');
       } else {
+        console.log('[Add Connection] Calling createConnection API...');
         await connectionService.createConnection({
           name: baseName,
           source_type: activeDbModal,
           description: `Created from Create Database`,
           credentials,
         } as any);
+        console.log('[Add Connection] Create successful!');
       }
 
+      console.log('[Add Connection] Invalidating queries and navigating...');
       await queryClient.invalidateQueries({ queryKey: ['connections'] });
       setActiveDbModal(null);
       navigate('/databases');
+      console.log('[Add Connection] Complete!');
     } catch (e: any) {
+      console.error('[Add Connection] Error:', e);
+      console.error('[Add Connection] Error response:', e?.response);
       const msg = e?.response?.data?.detail || e?.message || 'Failed to create connection.';
+      console.error('[Add Connection] Error message:', msg);
       setDbTest({ status: 'error', message: msg });
     }
   };
@@ -592,11 +635,36 @@ export const CreateDatabasePage: React.FC = () => {
   const startSalesforceOAuth = async () => {
     setDbTest({ status: 'testing', message: 'Redirecting to Salesforce…' });
     try {
+      console.log('[Salesforce OAuth] Starting OAuth flow...');
       const resp = await connectionService.startSalesforceOAuth({ name: 'Salesforce' });
-      if (!resp?.authorize_url) throw new Error('Missing authorize_url');
+      console.log('[Salesforce OAuth] Received response:', resp);
+      if (!resp?.authorize_url) {
+        console.error('[Salesforce OAuth] Missing authorize_url in response');
+        throw new Error('Missing authorize_url in response from server');
+      }
+      console.log('[Salesforce OAuth] Redirecting to:', resp.authorize_url);
       window.location.href = resp.authorize_url;
     } catch (e: any) {
-      const msg = e?.response?.data?.detail || e?.message || 'Failed to start Salesforce OAuth.';
+      console.error('[Salesforce OAuth] Error:', e);
+      console.error('[Salesforce OAuth] Error response:', e?.response);
+      console.error('[Salesforce OAuth] Error response data:', e?.response?.data);
+      
+      let msg = 'Failed to start Salesforce OAuth.';
+      if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+        msg = 'Request timed out. Please check if the backend server is running on http://localhost:8000';
+      } else if (e?.code === 'ERR_NETWORK' || e?.message?.includes('Network Error')) {
+        msg = 'Network error. Please check if the backend server is running and accessible.';
+      } else if (e?.response?.status === 401) {
+        msg = 'Authentication required. Please log in again.';
+      } else if (e?.response?.status === 501) {
+        msg = e?.response?.data?.detail || 'Salesforce OAuth not configured on the server.';
+      } else if (e?.response?.data?.detail) {
+        msg = e.response.data.detail;
+      } else if (e?.message) {
+        msg = e.message;
+      }
+      
+      console.error('[Salesforce OAuth] Error message:', msg);
       setDbTest({ status: 'error', message: msg });
     }
   };
@@ -1484,16 +1552,20 @@ export const CreateDatabasePage: React.FC = () => {
             style={{
               width: '100%',
               maxWidth: '720px',
+              maxHeight: '90vh',
               backgroundColor: 'white',
               borderRadius: '16px',
               border: '1px solid #e2e8f0',
               boxShadow: '0 18px 60px rgba(15, 23, 42, 0.25)',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
             }}
           >
             <div style={{
               padding: '18px 20px',
-              borderBottom: '1px solid #e2e8f0'
+              borderBottom: '1px solid #e2e8f0',
+              flexShrink: 0
             }}>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
                 Configure {activeDbModal === 'postgresql' ? 'PostgreSQL' : activeDbModal === 'mysql' ? 'MySQL' : activeDbModal === 'salesforce' ? 'Salesforce' : 'MongoDB'}
@@ -1501,7 +1573,7 @@ export const CreateDatabasePage: React.FC = () => {
               <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Enter your connection details</div>
             </div>
 
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
               {activeDbModal === 'salesforce' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '14px' }}>
                   <button
@@ -1739,7 +1811,7 @@ export const CreateDatabasePage: React.FC = () => {
                     )}
                   </div>
 
-                  {activeDbModal === 'salesforce' && sfConnectionId && (
+                  {activeDbModal === 'salesforce' && sfConnectionId && selectedSalesforceObjects.length > 0 && (
                     <div style={{ marginTop: '14px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>
                         Search fields

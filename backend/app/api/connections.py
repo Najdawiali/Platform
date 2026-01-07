@@ -105,7 +105,10 @@ def salesforce_oauth_start(
 
     Returns an `authorize_url` that the frontend should redirect the browser to.
     """
+    logger.info(f"Salesforce OAuth start requested by user {current_user.id}")
+    
     if not settings.SALESFORCE_CLIENT_ID or not settings.SALESFORCE_CLIENT_SECRET:
+        logger.error("Salesforce OAuth not configured - missing client credentials")
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail=(
@@ -114,6 +117,7 @@ def salesforce_oauth_start(
             ),
         )
 
+    logger.info(f"Using auth_base_url: {body.auth_base_url or settings.SALESFORCE_AUTH_BASE_URL}")
     auth_base_url = (body.auth_base_url or settings.SALESFORCE_AUTH_BASE_URL or "").strip()
     if not auth_base_url:
         auth_base_url = "https://login.salesforce.com"
@@ -147,6 +151,7 @@ def salesforce_oauth_start(
         "code_challenge_method": "S256",
     }
     authorize_url = f"{auth_base_url}/services/oauth2/authorize?{urlencode(params)}"
+    logger.info(f"Returning authorize_url: {authorize_url}")
     return {"authorize_url": authorize_url}
 
 
@@ -265,6 +270,7 @@ async def salesforce_oauth_callback(
     sf_display_name = None
     sf_user_id = None
     sf_org_id = None
+    sf_org_name = None
     try:
         sf_username = sf_identity.get("username")
         sf_display_name = sf_identity.get("display_name")
@@ -273,9 +279,33 @@ async def salesforce_oauth_callback(
     except Exception:
         pass
 
+    # Best-effort org name lookup for "Database" naming in UI.
+    # Keep this lightweight + failure-safe.
+    if access_token and instance_url:
+        try:
+            api_version = (payload.get("api_version") or "").strip() or "59.0"
+            async with httpx.AsyncClient(timeout=5) as client:
+                q_url = f"{instance_url.rstrip('/')}/services/data/v{api_version}/query"
+                org_resp = await client.get(
+                    q_url,
+                    params={"q": "SELECT Name FROM Organization"},
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                if org_resp.status_code < 400:
+                    data = org_resp.json() if org_resp.content else {}
+                    recs = data.get("records") if isinstance(data, dict) else None
+                    if isinstance(recs, list) and recs:
+                        name = recs[0].get("Name")
+                        if isinstance(name, str) and name.strip():
+                            sf_org_name = name.strip()
+        except Exception:
+            sf_org_name = None
+
     base_name = (payload.get("name") or "Salesforce").strip() or "Salesforce"
     connection_name = base_name
-    if sf_username:
+    if sf_org_name:
+        connection_name = sf_org_name
+    elif sf_username:
         connection_name = f"Salesforce - {sf_username}"
     elif sf_display_name:
         connection_name = f"Salesforce - {sf_display_name}"
@@ -291,6 +321,7 @@ async def salesforce_oauth_callback(
         "sf_display_name": sf_display_name,
         "sf_user_id": sf_user_id,
         "sf_org_id": sf_org_id,
+        "sf_org_name": sf_org_name,
         "api_version": (payload.get("api_version") or "").strip() or None,
         "selected_objects": [],
         "selected_fields": {},
@@ -298,6 +329,22 @@ async def salesforce_oauth_callback(
         "auto_sync_enabled": True,
         "auto_sync_interval_seconds": 3600,
     }
+
+    # Check if connection already exists for this Salesforce org
+    existing = db.query(Connection).filter(
+        Connection.user_id == user.id,
+        Connection.source_type == SourceType.SALESFORCE
+    ).all()
+    
+    for conn in existing:
+        if conn.credentials.get("sf_org_id") == sf_org_id:
+            # Update existing connection instead of creating duplicate
+            conn.credentials = credentials
+            conn.name = connection_name
+            db.commit()
+            db.refresh(conn)
+            redirect_url = f"{settings.FRONTEND_URL}/databases/create?salesforce_connection_id={conn.id}"
+            return RedirectResponse(url=redirect_url, status_code=303)
 
     connection = ConnectionService.create_connection(
         user=user,
@@ -584,8 +631,8 @@ def sync_connection(
     return ConnectionService.sync_connection(connection_id, current_user, db)
 
 
-@router.get("/{connection_id}/data")
-def query_connection_data(
+@router.get("/{connection_id}/data/live")
+def query_connection_data_live(
         connection_id: str,
         collection: str = Query(..., description="Collection/table name to query"),
     database: str = Query(None, description="Database name (required for multi-database connections)"),

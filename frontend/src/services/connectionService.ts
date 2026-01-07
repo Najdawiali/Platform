@@ -58,7 +58,9 @@ export const connectionService = {
    * Get connection config including credentials (for edit UI)
    */
   async getConnectionConfig(id: string): Promise<any> {
-    const response = await api.get(`/api/connections/${id}/config`);
+    const response = await api.get(`/api/connections/${id}/config`, {
+      timeout: 15000 // 15 second timeout
+    });
     return response.data;
   },
 
@@ -73,7 +75,9 @@ export const connectionService = {
    * Update connection
    */
   async updateConnection(id: string, data: Partial<ConnectionCreate>): Promise<Connection> {
-    const response = await api.put<Connection>(`/api/connections/${id}`, data);
+    const response = await api.put<Connection>(`/api/connections/${id}`, data, {
+      timeout: 120000 // 2 minute timeout for sync operations
+    });
     return response.data;
   },
 
@@ -130,7 +134,9 @@ export const connectionService = {
    * Backend returns an authorize_url to redirect the browser to.
    */
   async startSalesforceOAuth(params?: { name?: string; auth_base_url?: string; api_version?: string }): Promise<{ authorize_url: string }> {
-    const response = await api.post('/api/connections/salesforce/oauth/start', params || {});
+    const response = await api.post('/api/connections/salesforce/oauth/start', params || {}, {
+      timeout: 10000 // 10 second timeout
+    });
     return response.data;
   },
 
@@ -140,7 +146,10 @@ export const connectionService = {
   async getSalesforceFields(connectionId: string, objectName: string): Promise<Array<{ name: string; label?: string; type?: string; nillable?: boolean; custom?: boolean }>> {
     const response = await api.get<{ fields: Array<{ name: string; label?: string; type?: string; nillable?: boolean; custom?: boolean }> }>(
       `/api/connections/${connectionId}/fields`,
-      { params: { object_name: objectName } }
+      { 
+        params: { object_name: objectName },
+        timeout: 15000 // 15 second timeout
+      }
     );
     return response.data?.fields || [];
   },

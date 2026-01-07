@@ -14,6 +14,8 @@ const getSourceIcon = (sourceType: string) => {
       return '🐬';
     case 'mongodb':
       return '🍃';
+    case 'salesforce':
+      return '☁️';
     case 'manual':
       return '✍️';
     case 'csv':
@@ -38,6 +40,8 @@ const getSourceTypeName = (sourceType: string) => {
       return 'MySQL';
     case 'mongodb':
       return 'MongoDB';
+    case 'salesforce':
+      return 'Salesforce';
     case 'manual':
       return 'Manual Entry';
     case 'csv':
@@ -429,6 +433,12 @@ export const DatabasesListPage: React.FC = () => {
       for (const id of ids) {
         if (!next.includes(id)) next.push(id);
       }
+      
+      // Only update if order actually changed
+      if (JSON.stringify(prev) === JSON.stringify(next)) {
+        return prev;
+      }
+      
       try {
         localStorage.setItem(ORDER_KEY, JSON.stringify(next));
       } catch {
@@ -446,6 +456,7 @@ export const DatabasesListPage: React.FC = () => {
   const mysqlConnections = connections.filter(conn => conn.source_type === 'mysql');
   const postgresConnections = connections.filter(conn => conn.source_type === 'postgresql');
   const mongoConnections = connections.filter(conn => conn.source_type === 'mongodb');
+  const salesforceConnections = connections.filter(conn => conn.source_type === 'salesforce');
 
   // Create aggregated connections array
   const aggregatedConnections: Array<Connection & { isAggregated?: boolean, aggregatedCount?: number }> = [];
@@ -464,10 +475,10 @@ export const DatabasesListPage: React.FC = () => {
 
   // Add individual database connections
   const orderedRealConnections = useMemo(() => {
-    const real = [...mysqlConnections, ...postgresConnections, ...mongoConnections];
+    const real = [...mysqlConnections, ...postgresConnections, ...mongoConnections, ...salesforceConnections];
     const index = new Map(order.map((id, i) => [id, i]));
     return real.sort((a, b) => (index.get(a.id) ?? 1e9) - (index.get(b.id) ?? 1e9));
-  }, [mysqlConnections, postgresConnections, mongoConnections, order]);
+  }, [mysqlConnections, postgresConnections, mongoConnections, salesforceConnections, order]);
 
   aggregatedConnections.push(...orderedRealConnections);
 

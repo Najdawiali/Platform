@@ -10,6 +10,28 @@ import pandas as pd
 from .base import BaseConnector
 
 
+_CACHE_LOCK = RLock()
+_CACHE: Dict[str, tuple[float, Any]] = {}
+
+
+def _cache_get(key: str) -> Optional[Any]:
+    now = time.time()
+    with _CACHE_LOCK:
+        item = _CACHE.get(key)
+        if not item:
+            return None
+        expires_at, value = item
+        if expires_at <= now:
+            _CACHE.pop(key, None)
+            return None
+        return value
+
+
+def _cache_set(key: str, value: Any, ttl_seconds: int) -> None:
+    with _CACHE_LOCK:
+        _CACHE[key] = (time.time() + float(ttl_seconds), value)
+
+
 class SalesforceConnector(BaseConnector):
     """Salesforce connector.
 
@@ -65,29 +87,6 @@ class SalesforceConnector(BaseConnector):
         self._sf = None
         self.last_error: Optional[str] = None
         self._cache_ns: Optional[str] = None
-
-
-_CACHE_LOCK = RLock()
-_CACHE: Dict[str, tuple[float, Any]] = {}
-
-
-def _cache_get(key: str) -> Optional[Any]:
-    now = time.time()
-    with _CACHE_LOCK:
-        item = _CACHE.get(key)
-        if not item:
-            return None
-        expires_at, value = item
-        if expires_at <= now:
-            _CACHE.pop(key, None)
-            return None
-        return value
-
-
-def _cache_set(key: str, value: Any, ttl_seconds: int) -> None:
-    with _CACHE_LOCK:
-        _CACHE[key] = (time.time() + float(ttl_seconds), value)
-
 
     def _resolve_oauth_client(self) -> Dict[str, str]:
         """Resolve OAuth client configuration.
