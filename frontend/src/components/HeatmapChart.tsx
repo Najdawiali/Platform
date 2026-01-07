@@ -11,6 +11,7 @@ interface HeatmapChartProps {
   showValues?: boolean;
   showGrid?: boolean;
   cellBorderWidth?: number;
+  width?: number;
   height?: number;
   isLoading?: boolean;
   hasError?: boolean;
@@ -26,6 +27,7 @@ export const HeatmapChart: React.FC<HeatmapChartProps> = ({
   showValues = true,
   showGrid = true,
   cellBorderWidth = 1,
+  width,
   height = 400,
   isLoading = false,
   hasError = false,
@@ -181,13 +183,19 @@ export const HeatmapChart: React.FC<HeatmapChartProps> = ({
     );
   }
 
-  const cellWidth = Math.min(100, Math.max(30, 600 / xLabels.length));
-  const cellHeight = Math.min(60, Math.max(25, 400 / yLabels.length));
+  const safeWidth = Number.isFinite(width) && (width as number) > 0 ? (width as number) : 600;
+  const safeHeight = Number.isFinite(height) && height > 0 ? height : 400;
+
   const leftMargin = Math.max(...yLabels.map(l => l.length)) * 6 + 10;
   const bottomMargin = 60;
 
+  const availableW = Math.max(200, safeWidth - leftMargin - 40);
+  const availableH = Math.max(200, safeHeight - bottomMargin - 40);
+  const cellWidth = Math.min(120, Math.max(30, Math.floor(availableW / Math.max(1, xLabels.length))));
+  const cellHeight = Math.min(80, Math.max(25, Math.floor(availableH / Math.max(1, yLabels.length))));
+
   return (
-    <div style={{ width: '100%', height, overflowX: 'auto', overflowY: 'auto' }}>
+    <div style={{ width: '100%', height: safeHeight, overflowX: 'auto', overflowY: 'auto' }}>
       <ResponsiveContainer width="100%" height="100%">
         <svg
           width={leftMargin + xLabels.length * cellWidth + 40}

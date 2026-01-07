@@ -622,8 +622,42 @@ const DashboardViewPage: React.FC = () => {
     }
   }, [showChartMenu, openChartMenuId]);
 
-  const renderChart = (chart: any, chartData: any) => {
+  type ChartViewportSize = { width: number; height: number };
+  const ChartViewport: React.FC<{ children: (size: ChartViewportSize) => React.ReactNode }> = ({ children }) => {
+    const ref = useRef<HTMLDivElement | null>(null);
+    const [size, setSize] = useState<ChartViewportSize>({ width: 0, height: 0 });
+
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+
+      const update = () => {
+        const rect = el.getBoundingClientRect();
+        const width = Math.max(0, Math.floor(rect.width));
+        const height = Math.max(0, Math.floor(rect.height));
+        setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+      };
+
+      update();
+      const ro = new ResizeObserver(() => update());
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, []);
+
+    return (
+      <div ref={ref} style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
+        {children(size)}
+      </div>
+    );
+  };
+
+  const renderChart = (chart: any, chartData: any, viewport?: ChartViewportSize) => {
     const cfg = chart.config || {};
+
+    const viewportWidth = viewport?.width;
+    const viewportHeight = viewport?.height;
+    const heightPx = typeof viewportHeight === 'number' && Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 400;
+    const widthPx = typeof viewportWidth === 'number' && Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 600;
     
     // Table charts are paginated/infinite-scroll; do not rely on the dashboard-wide prefetch.
     if (chart.chart_type === 'table') {
@@ -1330,13 +1364,13 @@ const DashboardViewPage: React.FC = () => {
       const rendered = withPercent ? funnelData.map((d) => ({ ...d, percent: denom ? d.value / denom : undefined })) : funnelData;
 
       return (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: 560, maxWidth: '100%' }}>
-            <FunnelChartComponent data={rendered} nameKey="name" dataKey="value" colors={colors} height={320} />
-            {withPercent && rendered.length > 0 ? (
-              <div style={{ marginTop: '10px', fontSize: '11px', color: '#64748b' }}>Showing percent of first stage.</div>
-            ) : null}
+        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <FunnelChartComponent data={rendered} nameKey="name" dataKey="value" colors={colors} width={widthPx} height={Math.max(240, heightPx)} />
           </div>
+          {withPercent && rendered.length > 0 ? (
+            <div style={{ marginTop: '10px', fontSize: '11px', color: '#64748b' }}>Showing percent of first stage.</div>
+          ) : null}
         </div>
       );
     }
@@ -1455,22 +1489,21 @@ const DashboardViewPage: React.FC = () => {
         : Math.max(1, maxValueCfg);
 
       return (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: 520, maxWidth: '100%' }}>
-            <GaugeChart
-              value={gaugeValue}
-              minValue={minValue}
-              maxValue={computedMax}
-              unit={unit}
-              decimals={decimals}
-              prefix={prefix}
-              suffix={suffix}
-              thresholds={{ low: thresholdLow, medium: thresholdMedium }}
-              showLegend={showLegend}
-              showPercent={showPercent}
-              showValue={showValue}
-            />
-          </div>
+        <div style={{ width: '100%', height: '100%' }}>
+          <GaugeChart
+            value={gaugeValue}
+            minValue={minValue}
+            maxValue={computedMax}
+            unit={unit}
+            decimals={decimals}
+            prefix={prefix}
+            suffix={suffix}
+            thresholds={{ low: thresholdLow, medium: thresholdMedium }}
+            showLegend={showLegend}
+            showPercent={showPercent}
+            showValue={showValue}
+            height={Math.max(240, heightPx)}
+          />
         </div>
       );
     }
@@ -2048,6 +2081,8 @@ const DashboardViewPage: React.FC = () => {
             showValues={heatmapShowValues}
             showGrid={heatmapShowGrid}
             cellBorderWidth={heatmapCellBorderWidth}
+            width={widthPx}
+            height={Math.max(240, heightPx)}
           />
         );
       case 'histogram':
@@ -2092,6 +2127,7 @@ const DashboardViewPage: React.FC = () => {
             color={histogramColor}
             showGrid={histogramShowGrid}
             showValues={histogramShowValues}
+            height={Math.max(240, heightPx)}
           />
         );
       case 'boxplot':
@@ -2124,6 +2160,8 @@ const DashboardViewPage: React.FC = () => {
             showOutliers={boxPlotShowOutliers}
             boxColor={boxPlotBoxColor}
             showGrid={boxPlotShowGrid}
+            width={widthPx}
+            height={Math.max(240, heightPx)}
           />
         );
       default:
@@ -2479,13 +2517,40 @@ const DashboardViewPage: React.FC = () => {
                   Loading chart data...
                 </div>
               ) : (
-                <div data-chart-container style={{ padding: '20px', paddingBottom: '44px', height: '500px' }}>
-                  {renderChart(sqlInsight.chart, chartData)}
+                <div
+                  data-chart-container
+                  style={{
+                    padding: '20px',
+                    paddingBottom: '44px',
+                    height: '500px',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    marginBottom: '2px',
+                    display: 'flex',
+                  }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: '100%',
+                      display: 'flex',
+                      alignItems: sqlInsight.chart.chart_type === 'table' ? 'stretch' : 'center',
+                      justifyContent: sqlInsight.chart.chart_type === 'table' ? 'stretch' : 'center',
+                    }}
+                  >
+                    <div style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, padding: '2px', boxSizing: 'border-box' }}>
+                      <ChartViewport>
+                        {(size) => renderChart(sqlInsight.chart, chartData, size)}
+                      </ChartViewport>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* Info Note */}
               <div style={{
+                marginTop: '2px',
                 padding: '12px 20px',
                 backgroundColor: '#f8fafc',
                 borderTop: '1px solid #e2e8f0',
@@ -4095,10 +4160,15 @@ const DashboardViewPage: React.FC = () => {
                               height: '100%', 
                               flex: 1,
                               minHeight: 0,
+                              overflow: 'hidden',
                               display: 'flex',
                               flexDirection: 'column'
                             }}>
-                            {renderChart(chart, chartData)}
+                            <div style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, padding: '2px', boxSizing: 'border-box' }}>
+                              <ChartViewport>
+                                {(size) => renderChart(chart, chartData, size)}
+                              </ChartViewport>
+                            </div>
                           </div>
                         )}
                       </div>

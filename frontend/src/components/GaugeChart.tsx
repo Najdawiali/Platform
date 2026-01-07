@@ -86,7 +86,7 @@ export const GaugeChart: React.FC<GaugeChartProps> = ({
     : '—';
 
   return (
-    <div style={{ width: '100%', textAlign: 'center' }}>
+    <div style={{ width: '100%', height: `${height}px`, display: 'flex', flexDirection: 'column', textAlign: 'center' }}>
       {title && (
         <h3
           style={{
@@ -111,66 +111,71 @@ export const GaugeChart: React.FC<GaugeChartProps> = ({
         </p>
       )}
 
-      <ResponsiveContainer width="100%" height={height}>
-        <PieChart>
-          <Pie
-            data={gaugeData}
-            cx={`${cx}%`}
-            cy={`${cy}%`}
-            startAngle={180}
-            endAngle={0}
-            innerRadius="70%"
-            outerRadius="100%"
-            dataKey="value"
-            stroke="none"
-          >
-            <Cell fill={color} />
-            <Cell fill="#e5e7eb" />
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, width: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={gaugeData}
+              cx={`${cx}%`}
+              cy={`${cy}%`}
+              startAngle={180}
+              endAngle={0}
+              innerRadius="70%"
+              outerRadius="100%"
+              dataKey="value"
+              stroke="none"
+            >
+              <Cell fill={color} />
+              <Cell fill="#e5e7eb" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
 
-      {/* Value Display */}
-      <div
-        style={{
-          marginTop: '-80px',
-          position: 'relative',
-          zIndex: 10,
-        }}
-      >
-        {showValue ? (
-          <div
-            style={{
-              fontSize: '48px',
-              fontWeight: 700,
-              color: color,
-              lineHeight: '1',
-              marginBottom: '8px',
-            }}
-          >
-            {formattedValue}
-          </div>
-        ) : null}
+        {/* Value Display */}
         <div
           style={{
-            fontSize: '14px',
-            color: '#6b7280',
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: showLegend ? 76 : 24,
+            zIndex: 10,
+            pointerEvents: 'none',
           }}
         >
-          {safeMin !== 0 ? `range ${safeMin.toLocaleString()}–${formattedMax}` : `of ${formattedMax}`}
-        </div>
-        {showPercent ? (
+          {showValue ? (
+            <div
+              style={{
+                fontSize: '48px',
+                fontWeight: 700,
+                color: color,
+                lineHeight: '1',
+                marginBottom: '8px',
+              }}
+            >
+              {formattedValue}
+            </div>
+          ) : null}
           <div
             style={{
-              fontSize: '24px',
-              fontWeight: 600,
-              color: color,
-              marginTop: '4px',
+              fontSize: '14px',
+              color: '#6b7280',
             }}
           >
-            {percentage.toFixed(1)}%
+            {safeMin !== 0 ? `range ${safeMin.toLocaleString()}–${formattedMax}` : `of ${formattedMax}`}
           </div>
-        ) : null}
+          {showPercent ? (
+            <div
+              style={{
+                fontSize: '24px',
+                fontWeight: 600,
+                color: color,
+                marginTop: '4px',
+              }}
+            >
+              {percentage.toFixed(1)}%
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* Legend */}
@@ -179,11 +184,12 @@ export const GaugeChart: React.FC<GaugeChartProps> = ({
           style={{
             display: 'flex',
             justifyContent: 'center',
-            gap: '24px',
-            marginTop: '16px',
+            gap: '16px',
+            marginTop: '8px',
             padding: '12px',
             backgroundColor: '#f9fafb',
             borderRadius: '8px',
+            flexWrap: 'wrap',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

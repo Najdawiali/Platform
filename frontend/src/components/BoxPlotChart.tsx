@@ -7,6 +7,7 @@ interface BoxPlotChartProps {
   showOutliers?: boolean;
   boxColor?: string;
   showGrid?: boolean;
+  width?: number;
   height?: number;
   isLoading?: boolean;
   hasError?: boolean;
@@ -30,6 +31,7 @@ export const BoxPlotChart: React.FC<BoxPlotChartProps> = ({
   showOutliers = true,
   boxColor = '#3b82f6',
   showGrid = true,
+  width,
   height = 400,
   isLoading = false,
   hasError = false,
@@ -184,15 +186,44 @@ export const BoxPlotChart: React.FC<BoxPlotChartProps> = ({
   const globalMin = Math.min(...allValues);
   const globalMax = Math.max(...allValues);
   const range = globalMax - globalMin;
-  const padding = range * 0.1;
+  const padding = range === 0 ? 1 : range * 0.1;
 
-  const boxWidth = Math.min(80, Math.max(50, 600 / Math.min(boxStats.length, 6))); // Better box width calculation
-  const spacing = 40; // Space between boxes
-  const chartWidth = boxStats.length * (boxWidth + spacing) + 100; // Add extra padding
+  const leftAxisWidth = 70;
+  const rightPadding = 20;
+  const containerWidth = Number.isFinite(width) && (width as number) > 0 ? (width as number) : 600;
+  const n = Math.max(1, boxStats.length);
+  const availablePlotWidth = Math.max(200, containerWidth - leftAxisWidth - rightPadding);
+
+  const minBoxWidth = 50;
+  const maxBoxWidth = 180;
+  const minSpacing = 16;
+  const maxSpacing = 48;
+
+  let spacing = n > 1
+    ? Math.min(maxSpacing, Math.max(minSpacing, Math.floor((availablePlotWidth / n) * 0.25)))
+    : 0;
+
+  const candidateBoxWidth = n > 1
+    ? Math.floor((availablePlotWidth - spacing * (n - 1)) / n)
+    : Math.floor(Math.min(maxBoxWidth, availablePlotWidth * 0.45));
+
+  const boxWidth = Math.max(minBoxWidth, Math.min(maxBoxWidth, candidateBoxWidth));
+  if (n > 1 && candidateBoxWidth < minBoxWidth) {
+    spacing = minSpacing;
+  }
+
+  const plotWidth = n * boxWidth + Math.max(0, n - 1) * spacing;
+  const contentWidth = leftAxisWidth + plotWidth + rightPadding;
+  const svgWidth = Math.max(contentWidth, containerWidth);
+  const baseX = leftAxisWidth + Math.max(0, (svgWidth - leftAxisWidth - rightPadding - plotWidth) / 2);
 
   return (
     <div style={{ width: '100%', height: `${height}px`, overflowX: 'auto', overflowY: 'hidden' }}>
-      <svg width={Math.max(chartWidth, 600)} height={height}>
+      <svg
+        width={svgWidth}
+        height={height}
+        style={{ display: 'block', margin: '0 auto' }}
+      >
         {/* Grid lines */}
         {showGrid && (
           <g>
@@ -202,14 +233,14 @@ export const BoxPlotChart: React.FC<BoxPlotChartProps> = ({
               return (
                 <g key={ratio}>
                   <line
-                    x1={60}
+                    x1={leftAxisWidth - 10}
                     y1={y}
-                    x2={chartWidth - 20}
+                    x2={svgWidth - rightPadding}
                     y2={y}
                     stroke="#e5e7eb"
                     strokeDasharray="3 3"
                   />
-                  <text x={50} y={y + 4} fontSize={11} fill="#64748b" textAnchor="end">
+                  <text x={leftAxisWidth - 20} y={y + 4} fontSize={11} fill="#64748b" textAnchor="end">
                     {value}
                   </text>
                 </g>
@@ -220,9 +251,9 @@ export const BoxPlotChart: React.FC<BoxPlotChartProps> = ({
 
         {/* Box plots */}
         {boxStats.map((stats, index) => {
-          const x = 100 + index * (boxWidth + spacing);
+          const x = baseX + index * (boxWidth + spacing);
           const scale = (val: number) =>
-            height - 60 - ((val - (globalMin - padding)) / (range + 2 * padding)) * (height - 120);
+            height - 60 - ((val - (globalMin - padding)) / (Math.max(1e-9, range + 2 * padding))) * (height - 120);
 
           const minY = scale(stats.min);
           const q1Y = scale(stats.q1);
@@ -303,7 +334,7 @@ export const BoxPlotChart: React.FC<BoxPlotChartProps> = ({
 
         {/* Tooltip trigger areas */}
         {boxStats.map((stats, index) => {
-          const x = 100 + index * (boxWidth + 40);
+          const x = baseX + index * (boxWidth + spacing);
           return (
             <rect
               key={`trigger-${index}`}

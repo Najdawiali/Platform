@@ -204,6 +204,10 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
   }, [chart.chart_type, chart.id, debugEnabled, maxRowsInMemory, orientation, windowSize]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrollLeftRef = useRef<number>(0);
+  const lastScrollTopRef = useRef<number>(0);
+  const lastTriggerAtRef = useRef<number>(0);
+  const suppressScrollUntilRef = useRef<number>(0);
 
   // Track container size so we can always make the chart slightly wider than the container.
   // This guarantees a horizontal scrollbar exists, which is required for progressive loading
@@ -220,6 +224,34 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Initialize scroll position refs once the container is mounted.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    lastScrollLeftRef.current = el.scrollLeft || 0;
+    lastScrollTopRef.current = el.scrollTop || 0;
+  }, []);
+
+  // Apply any pending scroll adjustments requested by trimming/prepending logic.
+  useEffect(() => {
+    const delta = scrollAdjustmentRef.current;
+    if (!delta) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    // Suppress scroll-triggered loads caused by our own scroll adjustments.
+    suppressScrollUntilRef.current = Date.now() + 500;
+
+    if (orientation === 'vertical') {
+      el.scrollLeft = Math.max(0, el.scrollLeft + delta);
+      lastScrollLeftRef.current = el.scrollLeft;
+    } else {
+      el.scrollTop = Math.max(0, el.scrollTop + delta);
+      lastScrollTopRef.current = el.scrollTop;
+    }
+    scrollAdjustmentRef.current = 0;
+  }, [data.length, orientation]);
 
   const layout = orientation === 'horizontal' ? 'vertical' : 'horizontal';
 
@@ -661,28 +693,48 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
     if (!el) return;
     if (inFlightRef.current) return;
 
+    // Ignore scroll events caused by layout changes / programmatic adjustments.
+    const now = Date.now();
+    if (now < suppressScrollUntilRef.current) {
+      lastScrollLeftRef.current = el.scrollLeft || 0;
+      lastScrollTopRef.current = el.scrollTop || 0;
+      return;
+    }
+
     const thresholdPx = 120;
+    const cooldownMs = 350;
+    const canTrigger = now - lastTriggerAtRef.current > cooldownMs;
 
     if (orientation === 'vertical') {
       // Horizontal scrolling (more points along X)
+      const dx = (el.scrollLeft || 0) - (lastScrollLeftRef.current || 0);
       const nearEnd = el.scrollWidth - (el.scrollLeft + el.clientWidth) < thresholdPx;
       const nearStart = el.scrollLeft < thresholdPx;
+
+      lastScrollLeftRef.current = el.scrollLeft || 0;
       
-      if (nearEnd && hasMore) {
+      if (nearEnd && hasMore && dx > 0 && canTrigger) {
+        lastTriggerAtRef.current = now;
         loadMore();
-      } else if (nearStart && hasPrev) {
+      } else if (nearStart && hasPrev && dx < 0 && canTrigger) {
+        lastTriggerAtRef.current = now;
         loadPrev();
       }
       return;
     }
 
     // Vertical scrolling (more points along Y)
+    const dy = (el.scrollTop || 0) - (lastScrollTopRef.current || 0);
     const nearEnd = el.scrollHeight - (el.scrollTop + el.clientHeight) < thresholdPx;
     const nearStart = el.scrollTop < thresholdPx;
 
-    if (nearEnd && hasMore) {
+    lastScrollTopRef.current = el.scrollTop || 0;
+
+    if (nearEnd && hasMore && dy > 0 && canTrigger) {
+      lastTriggerAtRef.current = now;
       loadMore();
-    } else if (nearStart && hasPrev) {
+    } else if (nearStart && hasPrev && dy < 0 && canTrigger) {
+      lastTriggerAtRef.current = now;
       loadPrev();
     }
   }, [hasMore, hasPrev, loadMore, loadPrev, orientation]);
@@ -765,12 +817,13 @@ export const ProgressiveXYChart: React.FC<ProgressiveXYChartProps> = ({
   }
 
   return (
-    <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, background: 'white' }}>
+    <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, background: 'white', width: '100%', maxWidth: '100%' }}>
       {legend}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
         style={{
+          width: '100%',
           overflowX: orientation === 'vertical' ? 'auto' : 'hidden',
           overflowY: orientation === 'horizontal' ? 'auto' : 'hidden',
           maxHeight: orientation === 'horizontal' ? 650 : undefined,

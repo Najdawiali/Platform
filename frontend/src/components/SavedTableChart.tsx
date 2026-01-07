@@ -152,8 +152,8 @@ export const SavedTableChart: React.FC<SavedTableChartProps> = ({ dashboardId, c
   const tableColumns = (columns.length > 0 ? columns : Object.keys(rows[0] || {})).filter((c) => typeof c === 'string');
 
   return (
-    <div ref={containerRef} onScroll={onScroll} style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: tableDense ? '11px' : '13px' }}>
+    <div ref={containerRef} onScroll={onScroll} style={{ width: '100%', overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: tableDense ? '11px' : '13px' }}>
         <thead>
           <tr style={{ backgroundColor: '#f8fafc', position: 'sticky', top: 0 }}>
             {tableColumns.map((col: string, idx: number) => (
@@ -165,6 +165,9 @@ export const SavedTableChart: React.FC<SavedTableChartProps> = ({ dashboardId, c
                   borderBottom: '2px solid #e2e8f0',
                   fontWeight: 600,
                   color: '#0f172a',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {col}
@@ -188,7 +191,7 @@ export const SavedTableChart: React.FC<SavedTableChartProps> = ({ dashboardId, c
                     padding: tableDense ? '6px 10px' : '10px 12px',
                     color: '#475569',
                     whiteSpace: tableWrap ? 'normal' : 'nowrap',
-                    maxWidth: tableWrap ? '640px' : '320px',
+                    minWidth: 0,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
