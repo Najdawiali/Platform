@@ -1,12 +1,194 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { aiService, type ChatMessage as ServiceChatMessage } from '../services/aiService';
+import { datasetService } from '../services/datasetService';
+import { connectionService } from '../services/connectionService';
+import { ChartCard } from '../components/ChartCard';
+import { useQuery } from '@tanstack/react-query';
+
+// --- Type Definitions ---
 
 interface Message {
     id: string;
     role: 'user' | 'assistant';
-    content: string;
+    content?: string;
+    tool_calls?: ToolCall[];
     timestamp: Date;
+    isLoading?: boolean;
 }
+
+interface ToolCall {
+    id: string;
+    function: {
+        name: string;
+        arguments: string; // JSON string
+    };
+    tool?: string; // Backend custom property
+    result?: any; // The result of the tool call
+}
+
+// --- Helper Components ---
+
+const SQLResultMessage: React.FC<{ data: any, query: string }> = ({ data, query }) => {
+    // data is expected to be { columns: string[], rows: any[] }
+    const columns = data?.columns || [];
+    const rows = data?.rows || [];
+
+    if (!columns.length || !rows.length) {
+        return <div style={{ padding: '12px', color: '#64748b', fontStyle: 'italic' }}>No results found.</div>;
+    }
+
+    return (
+        <div style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'white' }}>
+            <div style={{ padding: '8px 12px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b', fontFamily: 'monospace' }}>
+                {query}
+            </div>
+            <div style={{ overflowX: 'auto', maxHeight: '300px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                        <tr style={{ backgroundColor: '#f1f5f9' }}>
+                            {columns.map((col: string, idx: number) => (
+                                <th key={idx} style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>
+                                    {col}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row: any, rIdx: number) => (
+                            <tr key={rIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                {columns.map((col: string, cIdx: number) => (
+                                    <td key={cIdx} style={{ padding: '8px 12px', color: '#334155', whiteSpace: 'nowrap' }}>
+                                        {typeof row[col] === 'object' ? JSON.stringify(row[col]) : String(row[col])}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div style={{ padding: '8px 12px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: '11px', color: '#94a3b8' }}>
+                Showing {rows.length} rows
+            </div>
+        </div>
+    );
+};
+
+const ChartMessage: React.FC<{ config: any }> = ({ config }) => {
+    // Config comes from the LLM tool call. It should match DashboardChartCreate structure roughly.
+    // We need to fetch data for it.
+
+    // 1. Construct ChartConfig from the tool payload
+    const chartConfig: any = useMemo(() => {
+        // The tool returns a structure like DashboardChartCreate.
+        // We need to merge top-level props into config for ChartCard.
+        return {
+            id: `ai-chart-${Date.now()}`,
+            type: config.chart_type,
+            title: config.title || 'Generated Chart',
+            columnSelections: config.config?.columnSelections || [],
+            rowColumns: config.config?.rowColumns || [],
+            colColumns: config.config?.colColumns || [],
+            ...config.config
+        };
+    }, [config]);
+
+    // 2. Fetch Data
+    // Logic adapted from VisualizePage.tsx
+    const { data: chartData = [], isLoading, error } = useQuery({
+        queryKey: ['ai-chart-data', chartConfig],
+        queryFn: async () => {
+            const allSelections = [
+                ...(chartConfig.columnSelections || []),
+                ...(chartConfig.rowColumns || []),
+                ...(chartConfig.colColumns || [])
+            ];
+
+            if (allSelections.length === 0) return [];
+
+            // Group by dataset/connection
+            const datasetGroups = allSelections.reduce((acc: any, sel: any) => {
+                if (!acc[sel.datasetId]) acc[sel.datasetId] = [];
+                if (!acc[sel.datasetId].some((s: any) => s.columnName === sel.columnName)) {
+                    acc[sel.datasetId].push(sel);
+                }
+                return acc;
+            }, {});
+
+            for (const [datasetId] of Object.entries(datasetGroups)) {
+                try {
+                    // Check if this is a database connection (format: "conn:{connectionId}:collection:{collectionName}")
+                    if (datasetId.startsWith('conn:')) {
+                        const [, connId, , collectionName] = datasetId.split(':');
+                        const dbData = await connectionService.queryData(connId, collectionName, 1000, 0);
+                        const rows = dbData?.data ?? [];
+
+                        // Extract data for each selected column - simplifying to return full rows for now as ChartCard expects arrays of objects
+                        // Ideally we should join if multiple datasets, but for AI chat single dataset is likely.
+                        return rows;
+
+                    } else {
+                        // Regular dataset
+                        const previewData = await datasetService.getDatasetPreview(datasetId);
+                        const rows = previewData?.rows ?? [];
+                        return rows;
+                    }
+                } catch (err) {
+                    console.error("Error fetching chart data", err);
+                    return [];
+                }
+            }
+            return [];
+        }
+    });
+
+    return (
+        <div style={{ marginTop: '16px', maxWidth: '100%', overflowX: 'auto' }}>
+            <ChartCard
+                chart={chartConfig}
+                chartIndex={0}
+                isEditing={false}
+                selectedDatasets={[]}
+                allDatasetDetails={[]}
+                datasetDetailsLoading={false}
+                datasetDetailsError={false}
+                chartData={chartData}
+                isChartDataLoading={isLoading}
+                hasChartDataError={!!error}
+                colors={['#4f46e5', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']}
+                onEdit={() => { }}
+                onRemove={() => { }}
+                onUpdateTitle={() => { }}
+                onAddColumn={() => { }}
+                onRemoveColumn={() => { }}
+            />
+        </div>
+    );
+};
+
+const WorkflowMessage: React.FC<{ workflow: any }> = ({ workflow }) => {
+    return (
+        <div style={{ marginTop: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', backgroundColor: '#f1f5f9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '20px' }}>⚡</span>
+                <span style={{ fontWeight: 600, color: '#334155' }}>Workflow Created</span>
+            </div>
+            <div style={{ fontSize: '14px', color: '#475569', marginBottom: '8px' }}>
+                <strong>Title:</strong> {workflow.title}
+            </div>
+            {workflow.steps && (
+                <div style={{ fontSize: '13px', color: '#64748b' }}>
+                    {workflow.steps.length} steps configured.
+                </div>
+            )}
+            <button style={{ marginTop: '12px', padding: '6px 12px', backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
+                Open in Workflow Builder
+            </button>
+        </div>
+    );
+};
+
+// --- Main Page Component ---
 
 const suggestedPrompts = [
     "Show me the top 5 products by revenue",
@@ -38,10 +220,11 @@ export const AIChatPage: React.FC = () => {
     const handleSend = async () => {
         if (!inputValue.trim() || isLoading) return;
 
+        const userText = inputValue.trim();
         const userMessage: Message = {
             id: Date.now().toString(),
             role: 'user',
-            content: inputValue.trim(),
+            content: userText,
             timestamp: new Date(),
         };
 
@@ -49,17 +232,40 @@ export const AIChatPage: React.FC = () => {
         setInputValue('');
         setIsLoading(true);
 
-        // Simulate AI response (replace with actual API call)
-        setTimeout(() => {
+        try {
+            // Prepare history for API
+            const history: ServiceChatMessage[] = messages.map(m => ({
+                role: m.role,
+                content: m.content || '',
+                tool_calls: m.tool_calls // Pass previous tool calls if any
+            }));
+
+            // Call API
+            const response = await aiService.sendMessage(userText, history);
+
+            // Construct assistant message
             const aiMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `I understand you're asking about: "${userMessage.content}"\n\nThis is a placeholder response. Connect this to your AI backend to get real insights from your data.`,
+                content: response.content || '',
+                // @ts-ignore
+                tool_calls: response.tool_calls,
                 timestamp: new Date(),
             };
             setMessages((prev) => [...prev, aiMessage]);
+
+        } catch (err) {
+            console.error(err);
+            const errorMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: "Sorry, I encountered an error communicating with the server.",
+                timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+        } finally {
             setIsLoading(false);
-        }, 1500);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -72,6 +278,78 @@ export const AIChatPage: React.FC = () => {
     const handlePromptClick = (prompt: string) => {
         setInputValue(prompt);
         inputRef.current?.focus();
+    };
+
+    // Render message content with potential tool outputs
+    const renderMessageContent = (msg: Message) => {
+        return (
+            <div>
+                {msg.content && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>}
+
+                {msg.tool_calls && msg.tool_calls.map((toolCall, idx) => {
+                    // Backend returns structure: { tool: string, args: any, result: any }
+                    const toolName = toolCall.tool || toolCall.function?.name;
+
+                    if (toolName === 'execute_sql_query') {
+                        // Show data table for SQL results
+                        const result = toolCall.result;
+                        if (result && result.data && !result.data.error) {
+                            return <SQLResultMessage key={idx} data={result.data} query={result.query} />;
+                        } else if (result?.data?.error) {
+                            return (
+                                <div key={idx} style={{ padding: '12px', backgroundColor: '#fef2f2', borderRadius: '8px', color: '#b91c1c', marginTop: '8px' }}>
+                                    Query error: {result.data.error}
+                                </div>
+                            );
+                        }
+                    }
+                    else if (toolName === 'create_dashboard_chart') {
+                        // Show success message for chart creation
+                        const result = toolCall.result;
+                        if (result?.status === 'created') {
+                            return (
+                                <div key={idx} style={{ marginTop: '12px', padding: '16px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '20px' }}>📊</span>
+                                        <span style={{ fontWeight: 600, color: '#166534' }}>
+                                            {result.message || 'Chart created!'}
+                                        </span>
+                                    </div>
+                                    {result.insight_name && (
+                                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#15803d' }}>
+                                            Saved as Insight: <strong>{result.insight_name}</strong>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        }
+                    }
+                    else if (toolName === 'create_workflow') {
+                        // Show workflow creation message
+                        const result = toolCall.result;
+                        const workflow = result?.workflow;
+                        if (workflow) {
+                            return (
+                                <div key={idx} style={{ marginTop: '12px', padding: '16px', backgroundColor: '#fef3c7', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '20px' }}>⚡</span>
+                                        <span style={{ fontWeight: 600, color: '#92400e' }}>
+                                            {result.message || `Workflow "${workflow.name}" created`}
+                                        </span>
+                                    </div>
+                                    {workflow.steps && workflow.steps.length > 0 && (
+                                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#a16207' }}>
+                                            {workflow.steps.length} step{workflow.steps.length > 1 ? 's' : ''}: {workflow.steps.map((s: any) => s.name || s.operation).join(' → ')}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        }
+                    }
+                    return null;
+                })}
+            </div>
+        );
     };
 
     return (
@@ -254,7 +532,7 @@ export const AIChatPage: React.FC = () => {
                                         display: 'flex',
                                         alignItems: 'flex-start',
                                         gap: '12px',
-                                        maxWidth: '80%',
+                                        maxWidth: '90%',
                                         flexDirection: message.role === 'user' ? 'row-reverse' : 'row',
                                     }}
                                 >
@@ -293,10 +571,10 @@ export const AIChatPage: React.FC = () => {
                                                     ? '0 2px 8px rgba(59, 130, 246, 0.2)'
                                                     : '0 2px 8px rgba(0, 0, 0, 0.05)',
                                             border: message.role === 'user' ? 'none' : '1px solid #e2e8f0',
-                                            whiteSpace: 'pre-wrap',
+                                            width: message.role === 'user' ? 'auto' : '100%',
                                         }}
                                     >
-                                        {message.content}
+                                        {renderMessageContent(message)}
                                     </div>
                                 </div>
                             </div>
