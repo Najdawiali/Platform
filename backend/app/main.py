@@ -13,9 +13,8 @@ from .config import settings
 
 # Import all models to ensure they're registered
 from .models import user, dataset, connection, dashboard, table_snapshot, saved_query
-
 # Import routers
-from .api import auth, datasets, connections, dashboards, query, saved_queries
+from .api import auth, datasets, connections, dashboards, query, saved_queries, ai
 
 
 UPLOAD_DIR = "./uploads"
@@ -108,6 +107,7 @@ app.include_router(datasets.router, prefix="/api/datasets", tags=["Datasets"])
 app.include_router(dashboards.router)
 app.include_router(query.router, prefix="/api/query", tags=["Query"])
 app.include_router(saved_queries.router)
+app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 
 
 logger = logging.getLogger("data-platform")

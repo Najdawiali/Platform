@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Frontend URL for redirects after OAuth
     FRONTEND_URL: str = "http://localhost:5204"
 
+    # DeepInfra / LLM Configuration
+    DEEPINFRA_API_KEY: str = "eEAxQfpqUrCUf1NDQEt5eeD541vn5Pob"
+    DEEPINFRA_BASE_URL: str = "https://api.deepinfra.com/v1/openai"
+    LLM_MODEL: str = "Qwen/Qwen3-14B"
+
     # OAuth - Salesforce (for data source connections)
     SALESFORCE_CLIENT_ID: Optional[str] = None
     SALESFORCE_CLIENT_SECRET: Optional[str] = None
