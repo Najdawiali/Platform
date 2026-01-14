@@ -84,6 +84,7 @@ export interface SQLVisualizeModalProps {
   }) => void;
   onSaveSuccess?: () => void;
   mode?: 'config' | 'sql_direct';
+  workflowConfig?: any;
 }
 
 const COLORS = ['#4f46e5', '#0ea5e9', '#22c55e', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
@@ -932,7 +933,7 @@ const chartTypeMeta: Record<ChartType, { label: string; help: string; icon: Reac
   },
 };
 
-export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows: inputRows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig }) => {
+export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, onClose, page, totalPages, columns, rows: inputRows, query, sources, onConfigChange, onSaveSuccess, mode = 'config', initialConfig, workflowConfig }) => {
   const navigate = useNavigate();
 
   const [filters, setFilters] = useState<SqlResultFilter[]>([]);
@@ -1010,33 +1011,33 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
   }, [columns]);
 
   const [layoutReady, setLayoutReady] = useState(false);
-  
+
   // Save insight state
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveDescription, setSaveDescription] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
-  
+
   // Edit mode tracking - extracted from initialConfig
   const [editDashboardId, setEditDashboardId] = useState<string | null>(null);
   const [editChartId, setEditChartId] = useState<string | null>(null);
 
   const [chartType, setChartType] = useState<ChartType>('bar');
-    const [iconTooltip, setIconTooltip] = useState<null | { text: string; x: number; y: number }>(null);
+  const [iconTooltip, setIconTooltip] = useState<null | { text: string; x: number; y: number }>(null);
 
-    const showIconTooltip = useCallback((text: string, targetEl: HTMLElement) => {
-      const rect = targetEl.getBoundingClientRect();
-      setIconTooltip({
-        text,
-        x: rect.left + rect.width / 2,
-        y: rect.top - 8,
-      });
-    }, []);
+  const showIconTooltip = useCallback((text: string, targetEl: HTMLElement) => {
+    const rect = targetEl.getBoundingClientRect();
+    setIconTooltip({
+      text,
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8,
+    });
+  }, []);
 
-    const hideIconTooltip = useCallback(() => {
-      setIconTooltip(null);
-    }, []);
+  const hideIconTooltip = useCallback(() => {
+    setIconTooltip(null);
+  }, []);
   const [chartTitle, setChartTitle] = useState<string>('');
 
   // X/Y selections (multi-select).
@@ -1171,7 +1172,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       if (initialConfig.editChartId) {
         setEditChartId(initialConfig.editChartId);
       }
-      
+
       // Restore Insight Name & Description if provided (for editing)
       // Note: We do NOT sync chartTitle to saveName here. They should be distinct.
       if (initialConfig.insightName) {
@@ -1183,14 +1184,14 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
 
       if (initialConfig.chartType) setChartType(initialConfig.chartType as ChartType);
       if (initialConfig.chartTitle) setChartTitle(initialConfig.chartTitle);
-      
+
       // Axes
       if (Array.isArray(initialConfig.xAxes) && initialConfig.xAxes.length > 0) {
         setXAxes(initialConfig.xAxes);
       } else if (initialConfig.xAxis) {
         setXAxes([initialConfig.xAxis]);
       }
-      
+
       if (Array.isArray(initialConfig.yAxes) && initialConfig.yAxes.length > 0) {
         setYAxes(initialConfig.yAxes);
       } else if (initialConfig.yAxis) {
@@ -1320,7 +1321,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
       }
     }
   }, [initialConfig, isOpen]);
-  
+
   // Clear edit state when modal closes
   useEffect(() => {
     if (!isOpen) {
@@ -1329,236 +1330,236 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     }
   }, [isOpen]);
 
-    const exportConfig = useCallback(() => {
-      const primaryXAxis = xAxes[0] ?? '';
-      const primaryYAxis = yAxes[0] ?? '';
+  const exportConfig = useCallback(() => {
+    const primaryXAxis = xAxes[0] ?? '';
+    const primaryYAxis = yAxes[0] ?? '';
 
-      const common = {
-        chartType,
-        title: chartTitle,
-        xAxis: primaryXAxis,
-        yAxis: primaryYAxis,
-      };
-
-      const cfg: Record<string, any> = {
-        mode, // Save the visualization mode (config vs sql_direct)
-        chartType,
-        chartTitle,
-        xAxis: primaryXAxis,
-        yAxis: primaryYAxis,
-        xAxes,
-        yAxes,
-        xTimeGrain,
-
-        // Global display options (apply to multiple chart types)
-        showGrid,
-        showLegend,
-        showDataLabels,
-        barCornerRadius,
-
-        // Colors
-        colorScheme,
-        customColors,
-        colorMapping,
-
-        // Scatter options
-        scatterColorBy,
-        scatterSizeBy,
-        scatterPointOpacity,
-        scatterMaxPointSize,
-
-        // SQL result filters (applied on the preview rows in the modal)
-        filters,
-      };
-
-      if (chartType === 'bar' || chartType === 'line' || chartType === 'area') {
-        cfg.seriesBy = seriesBy;
-        cfg.aggregation = aggregation;
-        cfg.sortOrder = sortOrder;
-        cfg.barOrientation = barOrientation;
-        cfg.isStacked = isStacked;
-        cfg.curveType = curveType;
-        cfg.showMarkers = showMarkers;
-        cfg.areaFillOpacity = areaFillOpacity;
-      } else if (chartType === 'pie' || chartType === 'donut') {
-        cfg.pieAggregation = pieAggregation;
-        cfg.pieSortOrder = pieSortOrder;
-        cfg.pieLabelMode = pieLabelMode;
-        cfg.pieTopN = pieTopN;
-        cfg.pieGroupOther = pieGroupOther;
-        cfg.donutInnerRadius = donutInnerRadius;
-      } else if (chartType === 'radar') {
-        cfg.radarAggregation = radarAggregation;
-        cfg.radarSortOrder = radarSortOrder;
-        cfg.radarTopN = radarTopN;
-        cfg.radarGroupOther = radarGroupOther;
-        cfg.radarFillOpacity = radarFillOpacity;
-        cfg.radarAxisMode = radarAxisMode;
-        cfg.radarSeriesBy = radarSeriesBy;
-        cfg.radarNormalizeMetrics = radarNormalizeMetrics;
-        cfg.radarUsePerMetricAggregation = radarUsePerMetricAggregation;
-        cfg.radarMetricAggregations = radarMetricAggregations;
-      } else if (chartType === 'funnel') {
-        cfg.funnelAggregation = funnelAggregation;
-        cfg.funnelSortOrder = funnelSortOrder;
-        cfg.funnelTopN = funnelTopN;
-        cfg.funnelGroupOther = funnelGroupOther;
-        cfg.funnelShowPercentOfFirst = funnelShowPercentOfFirst;
-      } else if (chartType === 'kpi') {
-        cfg.kpiAggregation = kpiAggregation;
-        cfg.kpiDecimals = kpiDecimals;
-        cfg.kpiPrefix = kpiPrefix;
-        cfg.kpiSuffix = kpiSuffix;
-      } else if (chartType === 'gauge') {
-        cfg.gaugeAggregation = gaugeAggregation;
-        cfg.gaugeSortByColumn = gaugeSortByColumn;
-        cfg.gaugeMinValue = gaugeMinValue;
-        cfg.gaugeUseAutoMax = gaugeUseAutoMax;
-        cfg.gaugeMaxValue = gaugeMaxValue;
-        cfg.gaugeDecimals = gaugeDecimals;
-        cfg.gaugePrefix = gaugePrefix;
-        cfg.gaugeSuffix = gaugeSuffix;
-        cfg.gaugeUnit = gaugeUnit;
-        cfg.gaugeThresholdLow = gaugeThresholdLow;
-        cfg.gaugeThresholdMedium = gaugeThresholdMedium;
-        cfg.gaugeShowLegend = gaugeShowLegend;
-        cfg.gaugeShowPercent = gaugeShowPercent;
-        cfg.gaugeShowValue = gaugeShowValue;
-      } else if (chartType === 'table') {
-        cfg.tableRowLimit = tableRowLimit;
-        cfg.tableFullData = tableFullData;
-        cfg.tableWrap = tableWrap;
-        cfg.tableDense = tableDense;
-        cfg.tableSortColumn = tableSortColumn;
-        cfg.tableSortDir = tableSortDir;
-        cfg.tableVisibleColumns = tableVisibleColumns;
-
-        cfg.tableEnableAggregation = tableEnableAggregation;
-        cfg.tableGroupByColumns = tableGroupByColumns;
-        cfg.tableMetrics = tableMetrics;
-      } else if (chartType === 'heatmap') {
-        cfg.heatmapAggregation = heatmapAggregation;
-        cfg.heatmapValueColumn = heatmapValueColumn;
-        cfg.heatmapShowValues = heatmapShowValues;
-        cfg.heatmapShowGrid = heatmapShowGrid;
-        cfg.heatmapCellBorderWidth = heatmapCellBorderWidth;
-        cfg.heatmapColorScheme = heatmapColorScheme;
-      } else if (chartType === 'histogram') {
-        cfg.histogramValueColumn = histogramValueColumn;
-        cfg.histogramBinCount = histogramBinCount;
-        cfg.histogramColor = histogramColor;
-        cfg.histogramShowGrid = histogramShowGrid;
-        cfg.histogramShowValues = histogramShowValues;
-      } else if (chartType === 'boxplot') {
-        cfg.boxPlotValueColumn = boxPlotValueColumn;
-        cfg.boxPlotCategoryColumn = boxPlotCategoryColumn;
-        cfg.boxPlotShowOutliers = boxPlotShowOutliers;
-        cfg.boxPlotBoxColor = boxPlotBoxColor;
-        cfg.boxPlotShowGrid = boxPlotShowGrid;
-      }
-
-      // Override xAxis/yAxis for special chart types
-      let finalXAxis = primaryXAxis;
-      let finalYAxis = primaryYAxis;
-      
-      if (chartType === 'histogram') {
-        finalXAxis = histogramValueColumn; // Use value column as x_column for backend
-        finalYAxis = ''; // No y-axis for histogram
-      } else if (chartType === 'boxplot') {
-        finalXAxis = boxPlotValueColumn; // Use value column as x_column for backend
-        finalYAxis = ''; // No y-axis for box plot
-      }
-
-      return { ...common, xAxis: finalXAxis, yAxis: finalYAxis, config: cfg };
-    }, [
-      aggregation,
-      areaFillOpacity,
-      barOrientation,
-      chartTitle,
+    const common = {
       chartType,
-      filters,
-      curveType,
-      donutInnerRadius,
-      funnelAggregation,
-      funnelGroupOther,
-      funnelShowPercentOfFirst,
-      funnelSortOrder,
-      funnelTopN,
-      gaugeAggregation,
-      gaugeDecimals,
-      gaugeMaxValue,
-      gaugeMinValue,
-      radarMetricAggregations,
-      gaugePrefix,
-      gaugeShowLegend,
-      gaugeShowPercent,
-      radarUsePerMetricAggregation,
-      gaugeShowValue,
-      gaugeSuffix,
-      gaugeSortByColumn,
-      gaugeThresholdLow,
-      gaugeThresholdMedium,
-      gaugeUnit,
-      gaugeUseAutoMax,
-      isStacked,
-      kpiAggregation,
-      kpiDecimals,
-      kpiPrefix,
-      kpiSuffix,
-      pieAggregation,
-      pieGroupOther,
-      pieLabelMode,
-      pieSortOrder,
-      pieTopN,
-      radarAggregation,
-      radarAxisMode,
-      radarFillOpacity,
-      radarGroupOther,
-      radarNormalizeMetrics,
-      radarSeriesBy,
-      radarSortOrder,
-      radarTopN,
-      scatterColorBy,
-      scatterMaxPointSize,
-      scatterPointOpacity,
-      scatterSizeBy,
-      heatmapAggregation,
-      heatmapValueColumn,
-      heatmapShowValues,
-      heatmapShowGrid,
-      heatmapCellBorderWidth,
-      heatmapColorScheme,
-      histogramValueColumn,
-      histogramBinCount,
-      histogramColor,
-      histogramShowGrid,
-      histogramShowValues,
-      boxPlotValueColumn,
-      boxPlotCategoryColumn,
-      boxPlotShowOutliers,
-      boxPlotBoxColor,
-      boxPlotShowGrid,
-      seriesBy,
-      showDataLabels,
+      title: chartTitle,
+      xAxis: primaryXAxis,
+      yAxis: primaryYAxis,
+    };
+
+    const cfg: Record<string, any> = {
+      mode, // Save the visualization mode (config vs sql_direct)
+      chartType,
+      chartTitle,
+      xAxis: primaryXAxis,
+      yAxis: primaryYAxis,
+      xAxes,
+      yAxes,
+      xTimeGrain,
+
+      // Global display options (apply to multiple chart types)
       showGrid,
       showLegend,
-      showMarkers,
-      sortOrder,
-      tableDense,
-      tableFullData,
-      tableRowLimit,
-      tableSortColumn,
-      tableSortDir,
-      tableVisibleColumns,
-      tableWrap,
-      tableEnableAggregation,
-      tableGroupByColumns,
-      tableMetrics,
+      showDataLabels,
       barCornerRadius,
-      xAxes,
-      xTimeGrain,
-      yAxes,
-    ]);
+
+      // Colors
+      colorScheme,
+      customColors,
+      colorMapping,
+
+      // Scatter options
+      scatterColorBy,
+      scatterSizeBy,
+      scatterPointOpacity,
+      scatterMaxPointSize,
+
+      // SQL result filters (applied on the preview rows in the modal)
+      filters,
+    };
+
+    if (chartType === 'bar' || chartType === 'line' || chartType === 'area') {
+      cfg.seriesBy = seriesBy;
+      cfg.aggregation = aggregation;
+      cfg.sortOrder = sortOrder;
+      cfg.barOrientation = barOrientation;
+      cfg.isStacked = isStacked;
+      cfg.curveType = curveType;
+      cfg.showMarkers = showMarkers;
+      cfg.areaFillOpacity = areaFillOpacity;
+    } else if (chartType === 'pie' || chartType === 'donut') {
+      cfg.pieAggregation = pieAggregation;
+      cfg.pieSortOrder = pieSortOrder;
+      cfg.pieLabelMode = pieLabelMode;
+      cfg.pieTopN = pieTopN;
+      cfg.pieGroupOther = pieGroupOther;
+      cfg.donutInnerRadius = donutInnerRadius;
+    } else if (chartType === 'radar') {
+      cfg.radarAggregation = radarAggregation;
+      cfg.radarSortOrder = radarSortOrder;
+      cfg.radarTopN = radarTopN;
+      cfg.radarGroupOther = radarGroupOther;
+      cfg.radarFillOpacity = radarFillOpacity;
+      cfg.radarAxisMode = radarAxisMode;
+      cfg.radarSeriesBy = radarSeriesBy;
+      cfg.radarNormalizeMetrics = radarNormalizeMetrics;
+      cfg.radarUsePerMetricAggregation = radarUsePerMetricAggregation;
+      cfg.radarMetricAggregations = radarMetricAggregations;
+    } else if (chartType === 'funnel') {
+      cfg.funnelAggregation = funnelAggregation;
+      cfg.funnelSortOrder = funnelSortOrder;
+      cfg.funnelTopN = funnelTopN;
+      cfg.funnelGroupOther = funnelGroupOther;
+      cfg.funnelShowPercentOfFirst = funnelShowPercentOfFirst;
+    } else if (chartType === 'kpi') {
+      cfg.kpiAggregation = kpiAggregation;
+      cfg.kpiDecimals = kpiDecimals;
+      cfg.kpiPrefix = kpiPrefix;
+      cfg.kpiSuffix = kpiSuffix;
+    } else if (chartType === 'gauge') {
+      cfg.gaugeAggregation = gaugeAggregation;
+      cfg.gaugeSortByColumn = gaugeSortByColumn;
+      cfg.gaugeMinValue = gaugeMinValue;
+      cfg.gaugeUseAutoMax = gaugeUseAutoMax;
+      cfg.gaugeMaxValue = gaugeMaxValue;
+      cfg.gaugeDecimals = gaugeDecimals;
+      cfg.gaugePrefix = gaugePrefix;
+      cfg.gaugeSuffix = gaugeSuffix;
+      cfg.gaugeUnit = gaugeUnit;
+      cfg.gaugeThresholdLow = gaugeThresholdLow;
+      cfg.gaugeThresholdMedium = gaugeThresholdMedium;
+      cfg.gaugeShowLegend = gaugeShowLegend;
+      cfg.gaugeShowPercent = gaugeShowPercent;
+      cfg.gaugeShowValue = gaugeShowValue;
+    } else if (chartType === 'table') {
+      cfg.tableRowLimit = tableRowLimit;
+      cfg.tableFullData = tableFullData;
+      cfg.tableWrap = tableWrap;
+      cfg.tableDense = tableDense;
+      cfg.tableSortColumn = tableSortColumn;
+      cfg.tableSortDir = tableSortDir;
+      cfg.tableVisibleColumns = tableVisibleColumns;
+
+      cfg.tableEnableAggregation = tableEnableAggregation;
+      cfg.tableGroupByColumns = tableGroupByColumns;
+      cfg.tableMetrics = tableMetrics;
+    } else if (chartType === 'heatmap') {
+      cfg.heatmapAggregation = heatmapAggregation;
+      cfg.heatmapValueColumn = heatmapValueColumn;
+      cfg.heatmapShowValues = heatmapShowValues;
+      cfg.heatmapShowGrid = heatmapShowGrid;
+      cfg.heatmapCellBorderWidth = heatmapCellBorderWidth;
+      cfg.heatmapColorScheme = heatmapColorScheme;
+    } else if (chartType === 'histogram') {
+      cfg.histogramValueColumn = histogramValueColumn;
+      cfg.histogramBinCount = histogramBinCount;
+      cfg.histogramColor = histogramColor;
+      cfg.histogramShowGrid = histogramShowGrid;
+      cfg.histogramShowValues = histogramShowValues;
+    } else if (chartType === 'boxplot') {
+      cfg.boxPlotValueColumn = boxPlotValueColumn;
+      cfg.boxPlotCategoryColumn = boxPlotCategoryColumn;
+      cfg.boxPlotShowOutliers = boxPlotShowOutliers;
+      cfg.boxPlotBoxColor = boxPlotBoxColor;
+      cfg.boxPlotShowGrid = boxPlotShowGrid;
+    }
+
+    // Override xAxis/yAxis for special chart types
+    let finalXAxis = primaryXAxis;
+    let finalYAxis = primaryYAxis;
+
+    if (chartType === 'histogram') {
+      finalXAxis = histogramValueColumn; // Use value column as x_column for backend
+      finalYAxis = ''; // No y-axis for histogram
+    } else if (chartType === 'boxplot') {
+      finalXAxis = boxPlotValueColumn; // Use value column as x_column for backend
+      finalYAxis = ''; // No y-axis for box plot
+    }
+
+    return { ...common, xAxis: finalXAxis, yAxis: finalYAxis, config: cfg };
+  }, [
+    aggregation,
+    areaFillOpacity,
+    barOrientation,
+    chartTitle,
+    chartType,
+    filters,
+    curveType,
+    donutInnerRadius,
+    funnelAggregation,
+    funnelGroupOther,
+    funnelShowPercentOfFirst,
+    funnelSortOrder,
+    funnelTopN,
+    gaugeAggregation,
+    gaugeDecimals,
+    gaugeMaxValue,
+    gaugeMinValue,
+    radarMetricAggregations,
+    gaugePrefix,
+    gaugeShowLegend,
+    gaugeShowPercent,
+    radarUsePerMetricAggregation,
+    gaugeShowValue,
+    gaugeSuffix,
+    gaugeSortByColumn,
+    gaugeThresholdLow,
+    gaugeThresholdMedium,
+    gaugeUnit,
+    gaugeUseAutoMax,
+    isStacked,
+    kpiAggregation,
+    kpiDecimals,
+    kpiPrefix,
+    kpiSuffix,
+    pieAggregation,
+    pieGroupOther,
+    pieLabelMode,
+    pieSortOrder,
+    pieTopN,
+    radarAggregation,
+    radarAxisMode,
+    radarFillOpacity,
+    radarGroupOther,
+    radarNormalizeMetrics,
+    radarSeriesBy,
+    radarSortOrder,
+    radarTopN,
+    scatterColorBy,
+    scatterMaxPointSize,
+    scatterPointOpacity,
+    scatterSizeBy,
+    heatmapAggregation,
+    heatmapValueColumn,
+    heatmapShowValues,
+    heatmapShowGrid,
+    heatmapCellBorderWidth,
+    heatmapColorScheme,
+    histogramValueColumn,
+    histogramBinCount,
+    histogramColor,
+    histogramShowGrid,
+    histogramShowValues,
+    boxPlotValueColumn,
+    boxPlotCategoryColumn,
+    boxPlotShowOutliers,
+    boxPlotBoxColor,
+    boxPlotShowGrid,
+    seriesBy,
+    showDataLabels,
+    showGrid,
+    showLegend,
+    showMarkers,
+    sortOrder,
+    tableDense,
+    tableFullData,
+    tableRowLimit,
+    tableSortColumn,
+    tableSortDir,
+    tableVisibleColumns,
+    tableWrap,
+    tableEnableAggregation,
+    tableGroupByColumns,
+    tableMetrics,
+    barCornerRadius,
+    xAxes,
+    xTimeGrain,
+    yAxes,
+  ]);
 
   // Initialize sensible defaults when opened / data changes
   useEffect(() => {
@@ -1928,20 +1929,20 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     });
   }, [chartType, isOpen, radarAggregation, yAxes]);
 
-    const isTemporalX = useMemo(() => {
-      const cols = xAxes.filter(Boolean);
-      if (cols.length === 0) return false;
+  const isTemporalX = useMemo(() => {
+    const cols = xAxes.filter(Boolean);
+    if (cols.length === 0) return false;
 
-      // Show the breakdown dropdown if ANY selected X column looks temporal.
-      // This is important for multi-select X where the first column may be an ID.
-      for (const c of cols) {
-        if (isTemporalColumnName(c)) return true;
-      }
-      for (const c of cols) {
-        if (isTemporalColumn(c, rows)) return true;
-      }
-      return false;
-    }, [rows, xAxes]);
+    // Show the breakdown dropdown if ANY selected X column looks temporal.
+    // This is important for multi-select X where the first column may be an ID.
+    for (const c of cols) {
+      if (isTemporalColumnName(c)) return true;
+    }
+    for (const c of cols) {
+      if (isTemporalColumn(c, rows)) return true;
+    }
+    return false;
+  }, [rows, xAxes]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1961,16 +1962,16 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
     const needsComputedX = withCombinedX || (isTemporalX && xTimeGrain !== 'none');
     const baseData = needsComputedX
       ? chartData.map((r) => {
-          const parts = withCombinedX
-            ? xAxes
-                .map((c) => {
-                  const raw = (r as any)?.[c];
-                  return isTemporalColumnName(c) || parseDateLike(raw) ? applyTimeGrain(raw, xTimeGrain) : normalizeKey(raw);
-                })
-                .filter(Boolean)
-            : [applyTimeGrain((r as any)?.[xAxis], xTimeGrain)].filter(Boolean);
-          return { ...(r as any), __x: parts.join(' / ') };
-        })
+        const parts = withCombinedX
+          ? xAxes
+            .map((c) => {
+              const raw = (r as any)?.[c];
+              return isTemporalColumnName(c) || parseDateLike(raw) ? applyTimeGrain(raw, xTimeGrain) : normalizeKey(raw);
+            })
+            .filter(Boolean)
+          : [applyTimeGrain((r as any)?.[xAxis], xTimeGrain)].filter(Boolean);
+        return { ...(r as any), __x: parts.join(' / ') };
+      })
       : chartData;
 
     // Fast path: raw rows, no series grouping.
@@ -5589,9 +5590,9 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                     setSaveError(null);
                     try {
                       const isEditMode = !!(editDashboardId && editChartId);
-                      
+
                       // Debug logs removed
-                      
+
                       // 1) Save to Query Library (REQUIRED for new insights, skip for edits to avoid duplicates)
                       if (!isEditMode) {
                         await savedQueryService.createSavedQuery({
@@ -5600,11 +5601,11 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                           query: queryText,
                         });
                       }
-                      
+
                       // 2) Prepare chart configuration
                       const isSingleValueChart = chartType === 'kpi' || chartType === 'gauge';
                       const xColumn = isSingleValueChart ? '' : (xAxis || (columns?.[0] ?? ''));
-                      const chartCfg = exportConfig().config;
+                      const chartCfg = { ...exportConfig().config, workflow_data: workflowConfig };
 
                       let yColumn = yAxis || '';
                       // Radar can be multi-metric via config.yAxes; persist a stable fallback y_column.
@@ -5614,7 +5615,7 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                           yColumn = ys[0];
                         }
                       }
-                      
+
                       const titleToSave = chartTitle || name;
 
                       if (isEditMode) {
@@ -5656,19 +5657,19 @@ export const SQLVisualizeModal: React.FC<SQLVisualizeModalProps> = ({ isOpen, on
                       console.error('Save insight error:', e);
                       console.error('Error response:', e?.response);
                       console.error('Error data:', e?.response?.data);
-                      
+
                       let errorMessage = 'Failed to save insight';
-                      
+
                       if (e?.response?.data?.detail) {
                         const detail = e.response.data.detail;
                         // Extract just the main error message if it's a multi-line backend error
-                        errorMessage = typeof detail === 'string' 
-                          ? detail.split('\n')[0] 
+                        errorMessage = typeof detail === 'string'
+                          ? detail.split('\n')[0]
                           : String(detail);
                       } else if (e?.message) {
                         errorMessage = e.message;
                       }
-                      
+
                       setSaveError(errorMessage);
                     } finally {
                       setSaveBusy(false);
