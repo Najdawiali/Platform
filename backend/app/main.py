@@ -12,9 +12,10 @@ from .database import SessionLocal
 from .config import settings
 
 # Import all models to ensure they're registered
-from .models import user, dataset, connection, dashboard, table_snapshot, saved_query
+from .models import user, dataset, connection, dashboard, table_snapshot, saved_query, saved_workflow
+
 # Import routers
-from .api import auth, datasets, connections, dashboards, query, saved_queries, ai
+from .api import auth, datasets, connections, dashboards, query, saved_queries, saved_workflows
 
 
 UPLOAD_DIR = "./uploads"
@@ -65,15 +66,19 @@ app.add_middleware(
     max_age=3600  # 1 hour session
 )
 
+# CORS configuration - allow all common localhost ports for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost:5204",
         "http://localhost:5173",
-        "http://localhost:5204", 
         "http://localhost:3000",
+        "http://127.0.0.1:5204",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
@@ -107,7 +112,7 @@ app.include_router(datasets.router, prefix="/api/datasets", tags=["Datasets"])
 app.include_router(dashboards.router)
 app.include_router(query.router, prefix="/api/query", tags=["Query"])
 app.include_router(saved_queries.router)
-app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+app.include_router(saved_workflows.router)
 
 
 logger = logging.getLogger("data-platform")
