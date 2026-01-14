@@ -191,11 +191,11 @@ const SavedTableChart: React.FC<{
   });
 
   return (
-    <div 
-      ref={containerRef} 
-      onScroll={onScroll} 
-      style={{ 
-        overflowX: 'auto', 
+    <div
+      ref={containerRef}
+      onScroll={onScroll}
+      style={{
+        overflowX: 'auto',
         maxHeight: '100%',
         height: '100%',
         overflowY: 'auto',
@@ -265,7 +265,7 @@ const DashboardViewPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // Check if we're viewing as an insight (single-chart dashboard)
   const isInsightView = location.pathname.startsWith('/insights/');
 
@@ -456,7 +456,7 @@ const DashboardViewPage: React.FC = () => {
     queryKey: ['dashboard-charts-data', id],
     queryFn: async () => {
       if (!dashboard?.charts) return [];
-      
+
       const dataPromises = dashboard.charts.map(async (chart) => {
         try {
           // Progressive charts fetch incrementally on scroll (avoid loading all points up-front)
@@ -575,18 +575,18 @@ const DashboardViewPage: React.FC = () => {
     // Regular dashboards (even with 1 chart) should use dashboard view
     if (!dashboard || !dashboard.is_insight) return null;
     if (dashboard.charts?.length !== 1) return null;
-    
+
     const chart = dashboard.charts[0];
     const sql = chart?.config?.sql_query;
     if (!chart || !sql) return null;
-    
-    console.log('Detected SQL Insight:', { 
-      dashboardId: dashboard.id, 
+
+    console.log('Detected SQL Insight:', {
+      dashboardId: dashboard.id,
       chartCount: dashboard.charts.length,
       hasSqlQuery: !!sql,
       isInsight: dashboard.is_insight
     });
-    
+
     return { dashboard, chart, sql: String(sql) };
   }, [dashboard]);
 
@@ -600,11 +600,11 @@ const DashboardViewPage: React.FC = () => {
   // Chart menu state (for insight view)
   const [showChartMenu, setShowChartMenu] = useState(false);
   const chartMenuRef = useRef<HTMLDivElement>(null);
-  
+
   // Chart menu state for dashboard view (track which chart menu is open)
   const [openChartMenuId, setOpenChartMenuId] = useState<string | null>(null);
   const dashboardChartMenuRef = useRef<HTMLDivElement>(null);
-  
+
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -615,7 +615,7 @@ const DashboardViewPage: React.FC = () => {
         setOpenChartMenuId(null);
       }
     };
-    
+
     if (showChartMenu || openChartMenuId) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -658,7 +658,7 @@ const DashboardViewPage: React.FC = () => {
     const viewportHeight = viewport?.height;
     const heightPx = typeof viewportHeight === 'number' && Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 400;
     const widthPx = typeof viewportWidth === 'number' && Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 600;
-    
+
     // Table charts are paginated/infinite-scroll; do not rely on the dashboard-wide prefetch.
     if (chart.chart_type === 'table') {
       return <SavedTableChart dashboardId={id!} chartId={chart.id} cfg={cfg} />;
@@ -729,9 +729,9 @@ const DashboardViewPage: React.FC = () => {
 
     const colors = ['#4f46e5', '#0ea5e9', '#22c55e', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308'];
     const data = chartData.data || [];
-    
+
     // Debug logs removed
-    
+
     // Pie / Donut
     if (chart.chart_type === 'pie' || chart.chart_type === 'donut') {
       const xCol: string | undefined = chart.x_column || (typeof cfg.xAxis === 'string' ? cfg.xAxis : undefined);
@@ -1243,8 +1243,8 @@ const DashboardViewPage: React.FC = () => {
 
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <RadarChart 
-            data={prepared.data} 
+          <RadarChart
+            data={prepared.data}
             margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
           >
             {showGrid ? <PolarGrid stroke="#e2e8f0" /> : null}
@@ -1507,11 +1507,11 @@ const DashboardViewPage: React.FC = () => {
         </div>
       );
     }
-    
+
     // Special chart types that handle their own data processing and may not need x_column
     const specialChartTypes = ['histogram', 'heatmap', 'gauge', 'kpi', 'scatter', 'funnel', 'radar', 'treemap', 'boxplot'];
     const isSpecialChart = specialChartTypes.includes(chart.chart_type);
-    
+
     // For non-table and non-special charts, validate x column (y column is optional for bar charts - they can count)
     if (!isSpecialChart && !chart.x_column) {
       return (
@@ -1530,7 +1530,7 @@ const DashboardViewPage: React.FC = () => {
         </div>
       );
     }
-    
+
     // Use raw data directly - no aggregation
     // Map data to recharts format: name (x-axis), value (y-axis)
     // Skip this processing for special chart types that handle their own data
@@ -1540,9 +1540,9 @@ const DashboardViewPage: React.FC = () => {
         name: String(row[chart.x_column]),
         value: Number(row[chart.y_column]) || 0
       }));
-    
+
     // Debug logs removed
-    
+
     // If no data after processing, show empty state (only for non-special charts)
     if (!isSpecialChart && processedData.length === 0) {
       return (
@@ -1567,24 +1567,24 @@ const DashboardViewPage: React.FC = () => {
           name: item.name.length > 20 ? item.name.substring(0, 17) + '...' : item.name,
           fullName: item.name
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis 
-                dataKey="name" 
+              <XAxis
+                dataKey="name"
                 angle={-35}
                 textAnchor="end"
                 height={100}
                 interval={0}
                 style={{ fontSize: '11px', fill: '#64748b' }}
               />
-              <YAxis 
+              <YAxis
                 style={{ fontSize: '12px', fill: '#64748b' }}
                 label={{ value: 'Count', angle: -90, position: 'insideLeft', style: { fill: '#64748b' } }}
               />
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1618,24 +1618,24 @@ const DashboardViewPage: React.FC = () => {
           name: item.name.length > 20 ? item.name.substring(0, 17) + '...' : item.name,
           fullName: item.name
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={lineData} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis 
-                dataKey="name" 
+              <XAxis
+                dataKey="name"
                 angle={-35}
                 textAnchor="end"
                 height={100}
                 interval={0}
                 style={{ fontSize: '11px', fill: '#64748b' }}
               />
-              <YAxis 
+              <YAxis
                 style={{ fontSize: '12px', fill: '#64748b' }}
                 label={{ value: 'Value', angle: -90, position: 'insideLeft', style: { fill: '#64748b' } }}
               />
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1659,10 +1659,10 @@ const DashboardViewPage: React.FC = () => {
                   return null;
                 }}
               />
-              <Line 
-                type="monotone" 
-                dataKey="value" 
-                stroke={colors[0]} 
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={colors[0]}
                 strokeWidth={3}
                 dot={{ fill: colors[0], r: 6 }}
                 activeDot={{ r: 8, strokeWidth: 2, stroke: 'white' }}
@@ -1677,7 +1677,7 @@ const DashboardViewPage: React.FC = () => {
           ...item,
           percentage: ((item.value / pieTotal) * 100).toFixed(1)
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -1705,7 +1705,7 @@ const DashboardViewPage: React.FC = () => {
                   <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                 ))}
               </Pie>
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1732,8 +1732,8 @@ const DashboardViewPage: React.FC = () => {
                   return null;
                 }}
               />
-              <Legend 
-                verticalAlign="bottom" 
+              <Legend
+                verticalAlign="bottom"
                 height={80}
                 wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }}
                 formatter={(value: string) => value.length > 20 ? value.substring(0, 17) + '...' : value}
@@ -1748,7 +1748,7 @@ const DashboardViewPage: React.FC = () => {
           ...item,
           percentage: ((item.value / donutTotal) * 100).toFixed(1)
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -1775,7 +1775,7 @@ const DashboardViewPage: React.FC = () => {
                   <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                 ))}
               </Pie>
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1802,8 +1802,8 @@ const DashboardViewPage: React.FC = () => {
                   return null;
                 }}
               />
-              <Legend 
-                verticalAlign="bottom" 
+              <Legend
+                verticalAlign="bottom"
                 height={80}
                 wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }}
                 formatter={(value: string) => value.length > 20 ? value.substring(0, 17) + '...' : value}
@@ -1817,30 +1817,30 @@ const DashboardViewPage: React.FC = () => {
           name: item.name.length > 20 ? item.name.substring(0, 17) + '...' : item.name,
           fullName: item.name
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={areaData} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
               <defs>
                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={colors[0]} stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor={colors[0]} stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor={colors[0]} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={colors[0]} stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis 
-                dataKey="name" 
+              <XAxis
+                dataKey="name"
                 angle={-35}
                 textAnchor="end"
                 height={100}
                 interval={0}
                 style={{ fontSize: '11px', fill: '#64748b' }}
               />
-              <YAxis 
+              <YAxis
                 style={{ fontSize: '12px', fill: '#64748b' }}
                 label={{ value: 'Value', angle: -90, position: 'insideLeft', style: { fill: '#64748b' } }}
               />
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1864,10 +1864,10 @@ const DashboardViewPage: React.FC = () => {
                   return null;
                 }}
               />
-              <Area 
-                type="monotone" 
-                dataKey="value" 
-                stroke={colors[0]} 
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={colors[0]}
                 strokeWidth={2}
                 fill="url(#colorValue)"
                 dot={{ fill: colors[0], r: 4 }}
@@ -1882,25 +1882,25 @@ const DashboardViewPage: React.FC = () => {
           y: item.count || item.value,
           z: item.count || 100
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis 
-                type="number" 
-                dataKey="x" 
+              <XAxis
+                type="number"
+                dataKey="x"
                 name="Value"
                 style={{ fontSize: '12px', fill: '#64748b' }}
               />
-              <YAxis 
-                type="number" 
-                dataKey="y" 
+              <YAxis
+                type="number"
+                dataKey="y"
                 name="Count"
                 style={{ fontSize: '12px', fill: '#64748b' }}
               />
               <ZAxis type="number" dataKey="z" range={[60, 400]} />
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1937,11 +1937,11 @@ const DashboardViewPage: React.FC = () => {
           ...item,
           fill: colors[index % colors.length]
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <FunnelChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -1981,27 +1981,27 @@ const DashboardViewPage: React.FC = () => {
           name: item.name.length > 15 ? item.name.substring(0, 12) + '...' : item.name,
           fullName: item.name
         }));
-        
+
         return (
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart data={radarData} margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
               <PolarGrid stroke="#e2e8f0" />
-              <PolarAngleAxis 
-                dataKey="name" 
+              <PolarAngleAxis
+                dataKey="name"
                 style={{ fontSize: '12px', fill: '#64748b' }}
               />
-              <PolarRadiusAxis 
-                angle={90} 
+              <PolarRadiusAxis
+                angle={90}
                 style={{ fontSize: '11px', fill: '#64748b' }}
               />
-              <Radar 
-                name="Value" 
-                dataKey="value" 
-                stroke={colors[0]} 
-                fill={colors[0]} 
+              <Radar
+                name="Value"
+                dataKey="value"
+                stroke={colors[0]}
+                fill={colors[0]}
                 fillOpacity={0.6}
               />
-              <Tooltip 
+              <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -2025,7 +2025,7 @@ const DashboardViewPage: React.FC = () => {
                   return null;
                 }}
               />
-              <Legend 
+              <Legend
                 wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }}
               />
             </RadarChart>
@@ -2037,14 +2037,14 @@ const DashboardViewPage: React.FC = () => {
         const yAxisCol = chart.config?.yAxis || chart.y_column || '';
         const valueCol = chart.config?.heatmapValueColumn || chart.config?.valueColumn || chart.y_column || '';
         const heatmapAgg = chart.config?.heatmapAggregation || chart.config?.aggregation || 'sum';
-        const heatmapColorScheme = Array.isArray(chart.config?.heatmapColorScheme) 
-          ? chart.config.heatmapColorScheme 
+        const heatmapColorScheme = Array.isArray(chart.config?.heatmapColorScheme)
+          ? chart.config.heatmapColorScheme
           : ['#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444'];
-        const heatmapShowValues = typeof chart.config?.heatmapShowValues === 'boolean' 
-          ? chart.config.heatmapShowValues 
+        const heatmapShowValues = typeof chart.config?.heatmapShowValues === 'boolean'
+          ? chart.config.heatmapShowValues
           : true;
-        const heatmapShowGrid = typeof chart.config?.heatmapShowGrid === 'boolean' 
-          ? chart.config.heatmapShowGrid 
+        const heatmapShowGrid = typeof chart.config?.heatmapShowGrid === 'boolean'
+          ? chart.config.heatmapShowGrid
           : true;
         const heatmapCellBorderWidth = typeof chart.config?.heatmapCellBorderWidth === 'number'
           ? chart.config.heatmapCellBorderWidth
@@ -2088,8 +2088,8 @@ const DashboardViewPage: React.FC = () => {
       case 'histogram':
         // Extract histogram config
         const histogramValueCol = chart.config?.histogramValueColumn || chart.x_column || '';
-        const histogramBinCount = typeof chart.config?.histogramBinCount === 'number' 
-          ? chart.config.histogramBinCount 
+        const histogramBinCount = typeof chart.config?.histogramBinCount === 'number'
+          ? chart.config.histogramBinCount
           : 10;
         const histogramColor = typeof chart.config?.histogramColor === 'string'
           ? chart.config.histogramColor
@@ -2214,7 +2214,7 @@ const DashboardViewPage: React.FC = () => {
 
   if (sqlInsight) {
     const chartData = chartsData.find(d => d.chartId === sqlInsight.chart.id);
-    
+
     console.log('📊 Looking up chartData for insight:', {
       chartId: sqlInsight.chart.id,
       chartsDataLength: chartsData?.length || 0,
@@ -2226,14 +2226,14 @@ const DashboardViewPage: React.FC = () => {
         columns: chartData.columns
       } : 'NOT FOUND'
     });
-    
+
     const formatTime = (iso?: string): string => {
       if (!iso) return "Unknown";
       const date = new Date(iso);
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      
+
       if (diffHours < 1) return "Just now";
       if (diffHours < 24) return diffHours + " hour" + (diffHours === 1 ? "" : "s") + " ago";
       const diffDays = Math.floor(diffHours / 24);
@@ -2244,7 +2244,7 @@ const DashboardViewPage: React.FC = () => {
       }
       return date.toLocaleDateString();
     };
-    
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', backgroundColor: '#fff' }}>
         {/* Header */}
@@ -2278,7 +2278,7 @@ const DashboardViewPage: React.FC = () => {
                 <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '10px' }}>
                   {sqlInsight.dashboard.name}
                 </h1>
-                
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   {/* Data source badge */}
                   <div style={{
@@ -2294,7 +2294,7 @@ const DashboardViewPage: React.FC = () => {
                     <span>📊</span>
                     <span>SQL Insight</span>
                   </div>
-                  
+
                   {/* Updated time badge */}
                   <div style={{
                     display: 'flex',
@@ -2336,7 +2336,7 @@ const DashboardViewPage: React.FC = () => {
                 >
                   ⋯
                 </button>
-                
+
                 {showChartMenu && (
                   <div style={{
                     position: 'absolute',
@@ -2354,7 +2354,14 @@ const DashboardViewPage: React.FC = () => {
                     <button
                       onClick={() => {
                         setShowChartMenu(false);
-                        navigate(`/insights/sql-editor?dashboardId=${sqlInsight.dashboard.id}&chartId=${sqlInsight.chart.id}`);
+                        const cfg = sqlInsight.chart.config || {};
+                        // Check if this is a Workflow-based insight
+                        if (cfg.workflow_data) {
+                          navigate(`/model?insightId=${sqlInsight.dashboard.id}`);
+                        } else {
+                          // Fallback to SQL Editor for legacy/SQL-direct insights
+                          navigate(`/insights/sql-editor?dashboardId=${sqlInsight.dashboard.id}&chartId=${sqlInsight.chart.id}`);
+                        }
                       }}
                       style={{
                         width: '100%',
@@ -2376,7 +2383,7 @@ const DashboardViewPage: React.FC = () => {
                       <span>✏️</span>
                       <span>Edit Chart</span>
                     </button>
-                    
+
                     <button
                       onClick={() => {
                         setShowChartMenu(false);
@@ -2413,7 +2420,7 @@ const DashboardViewPage: React.FC = () => {
                       <span>🖼️</span>
                       <span>Export as PNG</span>
                     </button>
-                    
+
                     <button
                       onClick={() => {
                         setShowChartMenu(false);
@@ -2422,11 +2429,11 @@ const DashboardViewPage: React.FC = () => {
                           try {
                             // Get column headers from the first row
                             const headers = Object.keys(chartData.data[0]);
-                            
+
                             // Create CSV content
                             const csvRows = [
                               headers.join(','),
-                              ...chartData.data.map((row: any) => 
+                              ...chartData.data.map((row: any) =>
                                 headers.map(header => {
                                   const val = row[header];
                                   // Properly escape values containing commas, quotes, or newlines
@@ -2439,7 +2446,7 @@ const DashboardViewPage: React.FC = () => {
                                 }).join(',')
                               )
                             ];
-                            
+
                             const csvContent = csvRows.join('\n');
                             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                             const link = document.createElement('a');
@@ -2479,20 +2486,20 @@ const DashboardViewPage: React.FC = () => {
                 )}
               </div>
             </div>
-              
-              {/* Description */}
-              {sqlInsight.dashboard.description && (
-                <p style={{ color: '#64748b', fontSize: '14px', marginTop: '12px', lineHeight: 1.6 }}>
-                  {sqlInsight.dashboard.description}
-                </p>
-              )}
+
+            {/* Description */}
+            {sqlInsight.dashboard.description && (
+              <p style={{ color: '#64748b', fontSize: '14px', marginTop: '12px', lineHeight: 1.6 }}>
+                {sqlInsight.dashboard.description}
+              </p>
+            )}
           </div>
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, overflow: 'auto', backgroundColor: '#f8fafc' }}>
           <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px 32px' }}>
-            
+
             {/* Visualization Card */}
             <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
               {/* Header with Title and Chart Type */}
@@ -2714,11 +2721,11 @@ const DashboardViewPage: React.FC = () => {
                       // Heatmap configuration
                       const heatmapXAxis = typeof cfg.xAxis === 'string' ? cfg.xAxis : (sqlInsight.chart.x_column || '');
                       const heatmapYAxis = typeof cfg.yAxis === 'string' ? cfg.yAxis : (sqlInsight.chart.y_column || '');
-                      const heatmapValueColumn = (typeof cfg.heatmapValueColumn === 'string' && cfg.heatmapValueColumn) 
-                        ? cfg.heatmapValueColumn 
+                      const heatmapValueColumn = (typeof cfg.heatmapValueColumn === 'string' && cfg.heatmapValueColumn)
+                        ? cfg.heatmapValueColumn
                         : (typeof cfg.valueColumn === 'string' ? cfg.valueColumn : '');
-                      const heatmapAggregation = typeof cfg.heatmapAggregation === 'string' 
-                        ? cfg.heatmapAggregation 
+                      const heatmapAggregation = typeof cfg.heatmapAggregation === 'string'
+                        ? cfg.heatmapAggregation
                         : (typeof cfg.aggregation === 'string' ? cfg.aggregation : 'sum');
                       const heatmapShowValues = typeof cfg.heatmapShowValues === 'boolean' ? cfg.heatmapShowValues : true;
                       const heatmapShowGrid = typeof cfg.heatmapShowGrid === 'boolean' ? cfg.heatmapShowGrid : true;
@@ -2736,7 +2743,7 @@ const DashboardViewPage: React.FC = () => {
                       const histogramShowGrid = typeof cfg.histogramShowGrid === 'boolean' ? cfg.histogramShowGrid : true;
                       const histogramShowValues = typeof cfg.histogramShowValues === 'boolean' ? cfg.histogramShowValues : false;
                       const isHistogram = sqlInsight.chart.chart_type === 'histogram';
-                      
+
                       // Box plot configuration
                       const boxPlotValueColumn = (typeof cfg.boxPlotValueColumn === 'string' && cfg.boxPlotValueColumn)
                         ? cfg.boxPlotValueColumn
@@ -2821,13 +2828,13 @@ const DashboardViewPage: React.FC = () => {
                                         <div style={{ fontSize: '14px', color: '#0f172a' }}>
                                           {Array.isArray(sqlInsight.chart.config?.tableMetrics) && sqlInsight.chart.config?.tableMetrics.length
                                             ? sqlInsight.chart.config?.tableMetrics
-                                                .map((m: any) => {
-                                                  const agg = String(m?.agg ?? '').toLowerCase();
-                                                  const col = String(m?.column ?? '');
-                                                  return agg && col ? `${agg}(${col})` : null;
-                                                })
-                                                .filter(Boolean)
-                                                .join(', ')
+                                              .map((m: any) => {
+                                                const agg = String(m?.agg ?? '').toLowerCase();
+                                                const col = String(m?.column ?? '');
+                                                return agg && col ? `${agg}(${col})` : null;
+                                              })
+                                              .filter(Boolean)
+                                              .join(', ')
                                             : '—'}
                                         </div>
                                       </div>
@@ -3285,7 +3292,7 @@ const DashboardViewPage: React.FC = () => {
                             const token = localStorage.getItem('access_token');
                             const chartName = encodeURIComponent(sqlInsight.dashboard.name);
                             const exportUrl = `${apiBaseUrl}/api/datasets/${sqlInsight.chart.dataset_id}/export?token=${token}&filename=${chartName}`;
-                            
+
                             // Trigger download
                             window.location.href = exportUrl;
                           }
@@ -3389,7 +3396,7 @@ const DashboardViewPage: React.FC = () => {
                 )}
               </div>
             </div>
-            
+
             {/* Edit Button */}
             <button
               onClick={() => {
@@ -3416,7 +3423,7 @@ const DashboardViewPage: React.FC = () => {
               <span>Edit Dashboard</span>
             </button>
           </div>
-          
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -3692,21 +3699,21 @@ const DashboardViewPage: React.FC = () => {
                 } catch (e) {
                   // no-op: logging should never break rendering
                 }
-                
+
                 // Calculate percentage-based positioning with gaps
                 const gap = 24; // Gap in pixels between charts
                 const leftPercent = (chart.position_x / 12) * 100;
                 const widthPercent = (chart.width / 12) * 100;
                 const topPx = chart.position_y * 100 + (chart.position_y > 0 ? gap : 0);
                 const heightPx = chart.height * 100 - (gap / 2);
-                
+
                 console.log(`Chart ${chartIndex} (${chart.title}):`, {
                   type: chart.chart_type,
                   position: { x: chart.position_x, y: chart.position_y },
                   size: { width: chart.width, height: chart.height },
                   calculated: { leftPercent, topPx, widthPercent, heightPx }
                 });
-                
+
                 return (
                   <div
                     key={chart.id}
@@ -3714,8 +3721,8 @@ const DashboardViewPage: React.FC = () => {
                       position: 'absolute',
                       left: `${leftPercent}%`,
                       top: `${topPx}px`,
-                      width: chart.position_x + chart.width < 12 
-                        ? `calc(${widthPercent}% - ${gap}px)` 
+                      width: chart.position_x + chart.width < 12
+                        ? `calc(${widthPercent}% - ${gap}px)`
                         : `${widthPercent}%`,
                       height: `${heightPx}px`,
                       backgroundColor: 'white',
@@ -3749,10 +3756,10 @@ const DashboardViewPage: React.FC = () => {
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                         <h3 style={{
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        color: '#0f172a',
-                        margin: 0
+                          fontSize: '16px',
+                          fontWeight: 600,
+                          color: '#0f172a',
+                          margin: 0
                         }}>
                           {chart.title || `${chart.chart_type.charAt(0).toUpperCase() + chart.chart_type.slice(1)} Chart`}
                         </h3>
@@ -3781,7 +3788,7 @@ const DashboardViewPage: React.FC = () => {
                           );
                         })()}
                       </div>
-                      
+
                       {/* Chart Menu */}
                       <div style={{ position: 'relative' }}>
                         <button
@@ -3807,9 +3814,9 @@ const DashboardViewPage: React.FC = () => {
                         >
                           <MoreVertical size={18} />
                         </button>
-                        
+
                         {openChartMenuId === chart.id && (
-                          <div 
+                          <div
                             ref={dashboardChartMenuRef}
                             style={{
                               position: 'absolute',
@@ -3836,9 +3843,9 @@ const DashboardViewPage: React.FC = () => {
                                   const colsRaw = (ds as any)?.schema_info?.schema?.columns || (ds as any)?.schema_info?.columns || [];
                                   const cols = Array.isArray(colsRaw)
                                     ? colsRaw
-                                        .map((c: any) => (typeof c === 'string' ? c : (typeof c?.name === 'string' ? c.name : '')))
-                                        .map((s: string) => s.trim())
-                                        .filter(Boolean)
+                                      .map((c: any) => (typeof c === 'string' ? c : (typeof c?.name === 'string' ? c.name : '')))
+                                      .map((s: string) => s.trim())
+                                      .filter(Boolean)
                                     : [];
                                   setTimeMapColumns(cols);
                                   const current = (chart.config && typeof chart.config === 'object' && typeof chart.config.globalTimeColumn === 'string')
@@ -3915,7 +3922,7 @@ const DashboardViewPage: React.FC = () => {
                               <Image size={16} />
                               <span>Export as PNG</span>
                             </button>
-                            
+
                             {/* Export as CSV */}
                             <button
                               onClick={async () => {
@@ -3925,7 +3932,7 @@ const DashboardViewPage: React.FC = () => {
                                     const headers = Object.keys(chartData.data[0]);
                                     const csvRows = [
                                       headers.join(','),
-                                      ...chartData.data.map((row: any) => 
+                                      ...chartData.data.map((row: any) =>
                                         headers.map(header => {
                                           const val = row[header];
                                           if (val === null || val === undefined) return '';
@@ -3973,7 +3980,7 @@ const DashboardViewPage: React.FC = () => {
                               <FileDown size={16} />
                               <span>Export as CSV</span>
                             </button>
-                            
+
                             {/* Delete Chart */}
                             <button
                               onClick={async () => {
@@ -4115,21 +4122,21 @@ const DashboardViewPage: React.FC = () => {
                         </div>
                       </div>
                     ) : null}
-                    
+
                     {/* Chart Content */}
-                    <div 
+                    <div
                       data-chart-id={chart.id}
-                      style={{ 
-                        flex: 1, 
-                        display: 'flex', 
-                        flexDirection: 'column', 
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
                         minHeight: 0,
                         height: '100%',
                         position: 'relative'
                       }}
                     >
-                      <div style={{ 
-                        flex: 1, 
+                      <div style={{
+                        flex: 1,
                         minHeight: 0,
                         height: '100%',
                         width: '100%',
@@ -4144,7 +4151,7 @@ const DashboardViewPage: React.FC = () => {
                             Loading chart data...
                           </div>
                         ) : (
-                          <div 
+                          <div
                             ref={(el) => {
                               if (el) {
                                 console.log(`Chart ${chartIndex} (${chart.title}) wrapper dimensions:`, {
@@ -4155,9 +4162,9 @@ const DashboardViewPage: React.FC = () => {
                                 });
                               }
                             }}
-                            style={{ 
-                              width: '100%', 
-                              height: '100%', 
+                            style={{
+                              width: '100%',
+                              height: '100%',
                               flex: 1,
                               minHeight: 0,
                               overflow: 'hidden',
@@ -4177,8 +4184,8 @@ const DashboardViewPage: React.FC = () => {
                 );
               })}
               {/* Spacer to ensure container has proper height */}
-              <div style={{ 
-                position: 'absolute', 
+              <div style={{
+                position: 'absolute',
                 height: `${Math.max(...dashboard.charts.map(c => c.position_y + c.height)) * 100}px`,
                 width: '100%',
                 pointerEvents: 'none',
