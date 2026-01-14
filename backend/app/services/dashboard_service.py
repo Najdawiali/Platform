@@ -1,4 +1,23 @@
 # backend/app/services/dashboard_service.py
+"""
+Dashboard Service
+
+Manages dashboard creation, updates, and data retrieval with intelligent aggregation.
+
+This service implements industry-standard automatic aggregation strategies similar to
+Tableau and Power BI, ensuring optimal chart visualization regardless of data size.
+
+Key Features:
+- Intelligent column profiling and type detection
+- Chart-type specific aggregation rules
+- Automatic date grain selection
+- Cardinality-based grouping (TOP N + Others)
+- Smart aggregation function selection
+- Performance-optimized queries
+
+Author: Data Platform Team
+Date: 2025-12-26
+"""
 
 from typing import List, Optional, Dict, Any, Union
 from sqlalchemy.orm import Session, joinedload
