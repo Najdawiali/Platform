@@ -1457,6 +1457,73 @@ class ConnectionService:
         try:
             connector = None
 
+            # Salesforce previews should come from the latest Parquet snapshot (not live API).
+            # The sync flow stores/updates a Dataset per object with schema_info["parquet_path"].
+            if connection.source_type == SourceType.SALESFORCE:
+                import os
+                import pandas as pd
+                import duckdb
+                from sqlalchemy import func
+                from ..models.dataset import Dataset
+
+                dataset = (
+                    db.query(Dataset)
+                    .filter(
+                        Dataset.user_id == user.id,
+                        Dataset.connection_id == connection.id,
+                        Dataset.source_identifier == collection,
+                    )
+                    .order_by(func.coalesce(Dataset.updated_at, Dataset.created_at).desc())
+                    .first()
+                )
+
+                parquet_path = None
+                if dataset and isinstance(dataset.schema_info, dict):
+                    parquet_path = dataset.schema_info.get("parquet_path")
+
+                if not parquet_path or not os.path.exists(str(parquet_path)):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"No Parquet snapshot found for Salesforce object '{collection}'. "
+                            "Run a sync for this connection first."
+                        ),
+                    )
+
+                schema_columns = []
+                if dataset and isinstance(dataset.schema_info, dict):
+                    schema = dataset.schema_info.get("schema") or {}
+                    cols = schema.get("columns") or []
+                    if isinstance(cols, list):
+                        for c in cols:
+                            if isinstance(c, dict) and c.get("name"):
+                                schema_columns.append({"name": c.get("name")})
+
+                con = duckdb.connect(database=":memory:")
+                try:
+                    result_df = con.execute(
+                        "SELECT * FROM parquet_scan(?) LIMIT ? OFFSET ?",
+                        [str(parquet_path), int(limit), int(offset)],
+                    ).df()
+
+                    if result_df is None or result_df.empty:
+                        total_rows = dataset.row_count if dataset and isinstance(dataset.row_count, int) else 0
+                        return {"columns": schema_columns, "data": [], "total_rows": total_rows}
+
+                    result_df = result_df.where(pd.notnull(result_df), None)
+                    data = result_df.to_dict("records")
+
+                    # Prefer Dataset row_count if available; avoids COUNT(*) on big files.
+                    total_rows = dataset.row_count if dataset and isinstance(dataset.row_count, int) else len(data)
+
+                    # Prefer stored schema columns; fall back to parquet columns if missing.
+                    if not schema_columns:
+                        schema_columns = [{"name": c} for c in result_df.columns.tolist()]
+
+                    return {"columns": schema_columns, "data": data, "total_rows": total_rows}
+                finally:
+                    con.close()
+
             # NOTE:
             # - For PostgreSQL, UI sends a "database" value that represents schema.
             # - For MySQL, UI sends a "database" value that represents the database name.
@@ -1488,39 +1555,6 @@ class ConnectionService:
                     password=connection.credentials.get("password"),
                     table=collection,
                 )
-
-            elif connection.source_type == SourceType.SALESFORCE:
-                creds = dict(connection.credentials or {})
-                fields_map = creds.get('selected_fields') if isinstance(creds.get('selected_fields'), dict) else {}
-                selected_fields = fields_map.get(collection) if isinstance(fields_map.get(collection), list) else None
-                if not selected_fields:
-                    selected_fields = ["Id"]
-                # Safety: always include Id
-                if "Id" not in selected_fields:
-                    selected_fields = ["Id", *selected_fields]
-
-                auth_type = (creds.get("auth_type") or "").strip().lower()
-                if auth_type == "oauth" or creds.get("refresh_token"):
-                    connector = SalesforceConnector(
-                        auth_type="oauth",
-                        refresh_token=creds.get("refresh_token"),
-                        access_token=creds.get("access_token"),
-                        instance_url=creds.get("instance_url"),
-                        auth_base_url=creds.get("auth_base_url"),
-                        api_version=creds.get("api_version"),
-                        object_name=collection,
-                        fields=selected_fields,
-                    )
-                else:
-                    connector = SalesforceConnector(
-                        username=creds.get('username'),
-                        password=creds.get('password'),
-                        security_token=creds.get('token'),
-                        login_domain=creds.get('login_domain') or 'login',
-                        api_version=creds.get('api_version'),
-                        object_name=collection,
-                        fields=selected_fields,
-                    )
 
             if not connector:
                 raise HTTPException(
@@ -1818,6 +1852,17 @@ class ConnectionService:
 
         try:
             if source_type == SourceType.MONGODB:
+                import os
+                import re
+                import shutil
+                from datetime import timedelta
+                from ..models.dataset import Dataset
+                from ..services.dataset_service import DatasetService
+
+                user = db.query(User).filter(User.id == connection.user_id).first()
+                if not user:
+                    raise Exception("User not found for connection")
+
                 prev_snapshot = creds.get('schema_snapshot') if isinstance(creds.get('schema_snapshot'), list) else None
                 connector = MongoDBConnector(
                     connection_string=creds.get('connection_string'),
@@ -1837,7 +1882,6 @@ class ConnectionService:
                         creds['selected_collections'] = all_collections
                     else:
                         filtered = [c for c in selected if c in all_collections]
-                        removed = [c for c in selected if c not in all_collections]
                         creds['selected_collections'] = filtered
                 else:
                     # Previously "all" without an explicit list; freeze to snapshot
@@ -1849,6 +1893,11 @@ class ConnectionService:
                     _snapshot_key(creds.get('database'), None, c) for c in tracked_cols
                 )
                 _prune_snapshots(tracked_keys)
+
+                base_dir = os.path.join("./uploads", user.id, "mongodb", connection.id)
+                now = datetime.utcnow()
+                snapshot_label = now.strftime("%Y%m%dT%H%M%SZ")
+
                 for c in tracked_cols:
                     try:
                         c_connector = MongoDBConnector(
@@ -1856,11 +1905,36 @@ class ConnectionService:
                             database=creds.get('database'),
                             collection=c,
                         )
+                        
+                        # Find or create dataset for this collection
+                        dataset = (
+                            db.query(Dataset)
+                            .filter(Dataset.connection_id == connection.id, Dataset.source_identifier == c)
+                            .first()
+                        )
+                        if dataset is None:
+                            dataset = Dataset(
+                                user_id=user.id,
+                                connection_id=connection.id,
+                                name=c,
+                                description=f"MongoDB collection: {c}",
+                                source_type="mongodb",
+                                source_identifier=c,
+                                status="processing",
+                            )
+                            db.add(dataset)
+                            db.commit()
+                            db.refresh(dataset)
+
+                        parquet_path = os.path.join(base_dir, c, "snapshots", snapshot_label, "data.parquet")
+                        DatasetService.refresh_dataset_from_connector(dataset, c_connector, parquet_path, db=db)
+
                         c_connector.connect()
                         schema = c_connector.get_schema() or {}
                         row_count = c_connector.get_row_count()
                         df = c_connector.fetch_data(limit=50, offset=0)
                         c_connector.disconnect()
+
                         _upsert_snapshot(
                             creds.get('database'),
                             None,
@@ -1869,9 +1943,27 @@ class ConnectionService:
                             int(row_count) if row_count is not None else None,
                             df.to_dict(orient='records') if df is not None else [],
                         )
-                    except Exception:
-                        # best-effort per table
+                    except Exception as e:
+                        print(f"Error syncing MongoDB collection '{c}': {e}")
                         continue
+
+                # Delete snapshots older than 3 days (Retention Policy)
+                retention_days = 3
+                cutoff = now - timedelta(days=retention_days)
+                ts_re = re.compile(r"^\d{8}T\d{6}Z$")
+                for c in tracked_cols:
+                    snapshots_root = os.path.join(base_dir, c, "snapshots")
+                    if not os.path.isdir(snapshots_root):
+                        continue
+                    for entry in os.listdir(snapshots_root):
+                        if not ts_re.match(entry or ""):
+                            continue
+                        try:
+                            dt = datetime.strptime(entry, "%Y%m%dT%H%M%SZ")
+                        except Exception:
+                            continue
+                        if dt < cutoff:
+                            shutil.rmtree(os.path.join(snapshots_root, entry), ignore_errors=True)
 
             elif source_type == SourceType.POSTGRESQL:
                 prev_snapshot = creds.get('schema_snapshot') if isinstance(creds.get('schema_snapshot'), list) else None
