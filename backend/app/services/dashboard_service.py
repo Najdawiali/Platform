@@ -1,23 +1,4 @@
 # backend/app/services/dashboard_service.py
-"""
-Dashboard Service
-
-Manages dashboard creation, updates, and data retrieval with intelligent aggregation.
-
-This service implements industry-standard automatic aggregation strategies similar to
-Tableau and Power BI, ensuring optimal chart visualization regardless of data size.
-
-Key Features:
-- Intelligent column profiling and type detection
-- Chart-type specific aggregation rules
-- Automatic date grain selection
-- Cardinality-based grouping (TOP N + Others)
-- Smart aggregation function selection
-- Performance-optimized queries
-
-Author: Data Platform Team
-Date: 2025-12-26
-"""
 
 from typing import List, Optional, Dict, Any, Union
 from sqlalchemy.orm import Session, joinedload
@@ -414,7 +395,7 @@ class DashboardService:
         if not insight_data.sources or len(insight_data.sources) == 0:
             raise ValueError("At least one source is required")
 
-        df = QueryService.execute_query_to_dataframe_federated(
+        df = QueryService.execute_query_to_dataframe(
             query=query_text,
             sources=insight_data.sources,
             user=user,
@@ -518,45 +499,44 @@ class DashboardService:
     def get_user_insights(user: User, db: Session) -> List[DashboardListItem]:
         """Get all insights for a user with chart count (excludes regular dashboards)"""
         
-        dashboards = db.query(
-            Dashboard.id,
-            Dashboard.name,
-            Dashboard.description,
-            Dashboard.is_main,
-            Dashboard.is_private,
-            Dashboard.created_at,
-            Dashboard.updated_at,
-            func.count(DashboardChart.id).label('chart_count'),
-            func.max(DashboardChart.chart_type).label('first_chart_type')
-        ).outerjoin(
-            DashboardChart, Dashboard.id == DashboardChart.dashboard_id
-        ).filter(
-            Dashboard.user_id == user.id,
-            Dashboard.is_insight == True  # Only return insights, not regular dashboards
-        ).group_by(
-            Dashboard.id,
-            Dashboard.name,
-            Dashboard.description,
-            Dashboard.is_main,
-            Dashboard.is_private,
-            Dashboard.created_at,
-            Dashboard.updated_at
-        ).all()
+        # Fetch full objects to inspect config (efficient enough for paginated lists, though here we list all)
+        # We use joinedload to prevent N+1 queries
+        dashboards = db.query(Dashboard).options(joinedload(Dashboard.charts))\
+            .filter(
+                Dashboard.user_id == user.id,
+                Dashboard.is_insight == True
+            ).all()
         
-        return [
-            DashboardListItem(
+        results = []
+        for d in dashboards:
+            # Determine if any chart has workflow_data
+            has_workflow = False
+            first_type = None
+            first_id = None
+            if d.charts:
+                # Insights typically have 1 chart, but check all just in case
+                for c in d.charts:
+                    if c.config and isinstance(c.config, dict) and c.config.get("workflow_data"):
+                        has_workflow = True
+                    if first_type is None:
+                        first_type = c.chart_type
+                        first_id = str(c.id)
+            
+            results.append(DashboardListItem(
                 id=d.id,
                 name=d.name,
                 description=d.description,
-                is_main=getattr(d, "is_main", False),
-                is_private=getattr(d, "is_private", True),
-                chart_count=d.chart_count,
-                first_chart_type=d.first_chart_type,
+                is_main=d.is_main,
+                is_private=d.is_private,
+                chart_count=len(d.charts),
+                first_chart_type=first_type,
+                first_chart_id=first_id,
+                has_workflow_data=has_workflow,
                 created_at=d.created_at,
                 updated_at=d.updated_at
-            )
-            for d in dashboards
-        ]
+            ))
+            
+        return results
 
     @staticmethod
     def get_dashboard_by_id(
@@ -656,7 +636,7 @@ class DashboardService:
             raise ValueError("At least one source is required")
         
         # Execute query and get dataframe (same as create_sql_insight)
-        df = QueryService.execute_query_to_dataframe_federated(
+        df = QueryService.execute_query_to_dataframe(
             query=query_text,
             sources=insight_data.sources,
             user=user,
