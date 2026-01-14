@@ -189,6 +189,8 @@ export interface DashboardListItem {
   is_private?: boolean;
   chart_count: number;
   first_chart_type?: string;
+  first_chart_id?: string;
+  has_workflow_data?: boolean;
   created_at: string;
   updated_at?: string;
 }
@@ -254,3 +256,5 @@ export interface ColumnSelection {
   datasetName: string;
 }
 
+
+export * from './saved_workflow';
