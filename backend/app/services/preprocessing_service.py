@@ -108,7 +108,7 @@ class DataPreprocessingService:
             cleaned = re.sub(r'[^\w\s-]', '_', cleaned)  # Special chars to underscore
             cleaned = re.sub(r'\s+', '_', cleaned)  # Spaces to underscore
             cleaned = re.sub(r'_+', '_', cleaned)  # Multiple underscores to single
-            cleaned = cleaned.strip('_')  # Remove leading/trailing underscores
+            # cleaned = cleaned.strip('_')  # Remove leading/trailing underscores - DISABLED to preserve _id
 
             # Handle empty or numeric-only column names
             if not cleaned or cleaned.isdigit():
