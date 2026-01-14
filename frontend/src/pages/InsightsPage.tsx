@@ -301,6 +301,43 @@ export const InsightsPage: React.FC = () => {
                     >
                       <button
                         type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (d.has_workflow_data) {
+                            navigate(`/model?insightId=${d.id}`);
+                          } else if (d.first_chart_id) {
+                            navigate(`/insights/sql-editor?dashboardId=${d.id}&chartId=${d.first_chart_id}`);
+                          } else {
+                            // Fallback if no chart found (unlikely for valid insight)
+                            navigate(`/insights/${d.id}`);
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          textAlign: 'left',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: '#0f172a',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f8fafc';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <span style={{ fontSize: '14px' }}>✏️</span>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
                         onClick={(e) => handleDelete(e, d.id, d.name)}
                         disabled={deleteMutation.isPending}
                         style={{
