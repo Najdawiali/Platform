@@ -95,6 +95,8 @@ class DashboardListItem(BaseModel):
     is_private: bool = True
     chart_count: int
     first_chart_type: Optional[str] = None
+    first_chart_id: Optional[str] = None
+    has_workflow_data: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
 
