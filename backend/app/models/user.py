@@ -21,3 +21,4 @@ class User(Base):
     connections = relationship("Connection", back_populates="user", cascade="all, delete-orphan")
     dashboards = relationship("Dashboard", back_populates="user", cascade="all, delete-orphan")
     saved_queries = relationship("SavedQuery", cascade="all, delete-orphan")
+    saved_workflows = relationship("SavedWorkflow", back_populates="user", cascade="all, delete-orphan")
