@@ -5,18 +5,64 @@ import logging
 import sqlglot
 import re
 import math
+import os
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 from ..models.user import User
 from ..models.dataset import Dataset
-from ..models.connection import Connection
+from ..models.connection import Connection, SourceType
 from ..services.dataset_service import DatasetService
 from ..services.connection_service import ConnectionService
 from ..schemas.query import QuerySource, QueryResult
 
 class QueryService:
     logger = logging.getLogger(__name__)
+
+    @staticmethod
+    def _register_parquet_snapshot(con, source: QuerySource, user: User, db: Session, connection: Connection) -> None:
+        """Register a source (Salesforce or MongoDB) from the latest synced Parquet snapshot.
+
+        Our sync jobs materialize selected objects into Datasets and write Parquet snapshots.
+        The Dataset.schema_info.parquet_path points at the latest snapshot.
+        """
+        obj = (source.source_identifier or "").strip()
+        if not obj:
+            raise ValueError(f"Source identifier (object/collection name) required for connection {source.alias}")
+
+        # Find the most recent successful dataset for this exact connection + object
+        dataset = (
+            db.query(Dataset)
+            .filter(
+                Dataset.user_id == user.id,
+                Dataset.connection_id == connection.id,
+                Dataset.source_identifier == obj,
+                Dataset.status == "ready"
+            )
+            .order_by(Dataset.updated_at.desc().nullslast(), Dataset.created_at.desc())
+            .first()
+        )
+
+        parquet_path = None
+        if dataset and dataset.schema_info:
+            parquet_path = dataset.schema_info.get("parquet_path")
+
+        if not parquet_path or not os.path.exists(parquet_path):
+            source_type_label = connection.source_type.title() if hasattr(connection.source_type, 'title') else str(connection.source_type)
+            raise ValueError(
+                f"No Parquet snapshot available for {source_type_label} '{obj}'. "
+                f"Please run a {source_type_label} sync first to materialize data to Parquet."
+            )
+
+        QueryService._ensure_schema_exists(con, source.alias)
+
+        if "." in source.alias:
+            schema, table = source.alias.split(".", 1)
+            view_name = f'"{schema}"."{table}"'
+        else:
+            view_name = f'"{source.alias}"'
+
+        con.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM '{parquet_path}'")
 
     @staticmethod
     def _strip_trailing_semicolons(query: str) -> str:
@@ -134,7 +180,41 @@ class QueryService:
             con.close()
 
     @staticmethod
-    def execute_query_to_dataframe_federated(
+    def execute_query_to_dataframe(
+        query: str,
+        sources: List[QuerySource],
+        user: User,
+        db: Session,
+        max_rows: int = 100000,
+    ) -> pd.DataFrame:
+        """Execute a SQL query and return a DataFrame, optimizing for single-source if possible."""
+        
+        # 1. OPTIMIZATION: Check for Single-Source Connection Query
+        unique_connection_ids = set()
+        for s in sources:
+            if s.type == "connection":
+                unique_connection_ids.add(s.id)
+            elif s.type == "dataset":
+                unique_connection_ids.add("mixed") 
+                break
+        
+        if len(unique_connection_ids) == 1 and "mixed" not in unique_connection_ids:
+            connection_id = list(unique_connection_ids)[0]
+            connection = ConnectionService.get_connection_by_id(connection_id, user, db)
+            
+            # Supported connectors for direct execution
+            if connection and connection.source_type in ["mysql", "postgresql", "snowflake", "sqlserver"]:
+                return QueryService._execute_direct_query_to_dataframe(
+                    connection_id, query, sources, user, db, max_rows
+                )
+
+        # 2. Fallback to Federated Mode
+        return QueryService._execute_query_to_dataframe_federated(
+            query, sources, user, db, max_rows
+        )
+
+    @staticmethod
+    def _execute_query_to_dataframe_federated(
         query: str,
         sources: List[QuerySource],
         user: User,
@@ -166,6 +246,53 @@ class QueryService:
             return df
         finally:
             con.close()
+
+    @staticmethod
+    def _execute_direct_query_to_dataframe(
+        connection_id: str, 
+        query: str, 
+        sources: List[QuerySource], 
+        user: User, 
+        db: Session,
+        max_rows: int = 100000
+    ) -> pd.DataFrame:
+        """Execute query directly on the source database (Passthrough) and return DataFrame"""
+        connection = ConnectionService.get_connection_by_id(connection_id, user, db)
+        if not connection:
+            raise ValueError(f"Connection {connection_id} not found")
+            
+        # Rewrite query to remove UI aliases (e.g. "postgresql.orders" -> "orders")
+        # Sort sources by alias length desc to avoid partial replacements
+        sorted_sources = sorted(sources, key=lambda s: len(s.alias), reverse=True)
+        for source in sorted_sources:
+            if source.alias and source.source_identifier:
+                # Case-insensitive replacement of alias with source_identifier
+                pattern = re.compile(re.escape(source.alias), re.IGNORECASE)
+                query = pattern.sub(source.source_identifier, query)
+
+        # Initialize connector
+        connector = QueryService._get_connector_for_connection(connection, "dummy_table")
+        
+        if not connector.connect():
+            raise Exception(f"Failed to connect to {connection.name}")
+            
+        try:
+            # Apply Safety Limit
+            sanitized_query = QueryService._strip_trailing_semicolons(query)
+            if max_rows and max_rows > 0:
+                final_query = f"SELECT * FROM ({sanitized_query}) AS __q LIMIT {int(max_rows)}"
+            else:
+                final_query = sanitized_query
+
+            # Execute directly
+            df = connector.execute_query(final_query)
+            
+            # Format results (NaN -> None)
+            df = df.where(pd.notnull(df), None)
+            
+            return df
+        finally:
+            connector.disconnect()
 
     @staticmethod
     def _execute_direct_query(connection_id: str, query: str, sources: List[QuerySource], user: User, db: Session, start_time: float, page: int = 1, page_size: int = 100) -> QueryResult:
@@ -265,6 +392,11 @@ class QueryService:
             
         if not source.source_identifier:
             raise ValueError(f"Source identifier (table/collection) required for connection {source.alias}")
+
+        # Snapshot-based sources: never query live; always use Parquet snapshots.
+        if connection.source_type in [SourceType.SALESFORCE, SourceType.MONGODB]:
+            QueryService._register_parquet_snapshot(con, source, user, db, connection)
+            return
 
         # Use the appropriate connector to fetch data
         connector = QueryService._get_connector_for_connection(connection, source.source_identifier)
