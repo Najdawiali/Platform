@@ -1,6 +1,7 @@
 # backend/app/services/dataset_service.py
 import os
 import shutil
+from datetime import datetime
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -66,6 +67,11 @@ class DatasetService:
             for chunk in connector.fetch_data_chunked(chunk_size=chunk_size):
                 chunk_count += 1
                 preprocessed_chunk, prep_report = DataPreprocessingService.preprocess_dataframe(chunk)
+                
+                # Add ingestion timestamp for snapshot tracking
+                # Use simple datetime.utcnow() directly to avoiding dtype issues with PyArrow/Pandas mixed comparisons
+                preprocessed_chunk['ingestion_ts'] = datetime.utcnow()
+                
                 preprocessing_reports.append(prep_report)
 
                 table = pa.Table.from_pandas(preprocessed_chunk)
@@ -105,6 +111,8 @@ class DatasetService:
                 "quality_report": aggregated_quality,
                 "preprocessing_summary": preprocessing_summary,
                 "parquet_path": parquet_path,
+                "sync_mode": "full_refresh",
+                "incremental_metadata": {},  # Future-proofing for cursors/offsets
             }
             dataset.status = "ready"
             db.commit()
@@ -475,17 +483,23 @@ class DatasetService:
             parquet_path = None
             writer = None
 
-            # Only create parquet for file-based sources (where we have a file_path)
+            # Create parquet for file-based sources OR MongoDB (materialized)
             if file_path:
                 parquet_path = f"{file_path}.parquet"
+            elif source_type == "mongodb" and connection:
+                # Store MongoDB materializations in the same organized structure as syncs
+                parquet_dir = os.path.join("./uploads", user.id, "mongodb", connection.id, source_identifier or "unknown", "snapshots", datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"))
+                os.makedirs(parquet_dir, exist_ok=True)
+                parquet_path = os.path.join(parquet_dir, "data.parquet")
 
             for chunk in connector.fetch_data_chunked():
                 chunk_count += 1
 
                 # CRITICAL: Preprocess data before quality checks
-                # This handles ALL edge cases: mixed types, special chars,
-                # bad values, encoding issues, etc.
                 preprocessed_chunk, prep_report = DataPreprocessingService.preprocess_dataframe(chunk)
+                
+                # Add ingestion timestamp for consistency across all snapshots
+                preprocessed_chunk['ingestion_ts'] = datetime.utcnow()
                 
                 # PARQUET OPTIMIZATION: Write chunk
                 if parquet_path:
@@ -549,8 +563,10 @@ class DatasetService:
                 "schema": schema,
                 "validation": validation_result,
                 "quality_report": aggregated_quality,
-                "preprocessing_summary": preprocessing_summary,  # Add preprocessing info
-                "parquet_path": parquet_path  # Add parquet path for optimized loading
+                "preprocessing_summary": preprocessing_summary,
+                "parquet_path": parquet_path,
+                "sync_mode": "full_refresh",
+                "incremental_metadata": {},
             }
             dataset.status = "ready"
             db.commit()
